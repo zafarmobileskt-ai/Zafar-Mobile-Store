@@ -1,0 +1,161 @@
+{
+  "id": "zafar-mobile-store-pos-app",
+  "short_name": "Zafar Mobile",
+  "name": "ZAFAR MOBILE STORE - POS & IMEI Inventory",
+  "description": "Comprehensive Mobile Point of Sale (POS), Real-Time IMEI Inventory Tracking, Used Phone Police Protection Verification, Barcode Scanner, and Thermal Receipt Printing System for mobile retail shops.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#0B0F17",
+  "theme_color": "#0F172A",
+  "categories": [
+    "business",
+    "finance",
+    "productivity",
+    "shopping",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-1024.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-1024.png",
+      "type": "image/png",
+      "sizes": "1024x1024",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-maskable-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/screenshot-mobile.png",
+      "sizes": "540x960",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Mobile POS & IMEI Lookup View"
+    },
+    {
+      "src": "/screenshot-desktop.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Desktop POS Management Dashboard"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "New Sale POS",
+      "short_name": "New Sale",
+      "description": "Start a new customer phone checkout and print receipt",
+      "url": "/?tab=pos",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Add Device Intake",
+      "short_name": "Add Device",
+      "description": "Intake a new or used mobile device with IMEI and Police certificate",
+      "url": "/?tab=inventory",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "file_handlers": [
+    {
+      "action": "/?action=import-backup",
+      "name": "Zafar Mobile Inventory & Backup Data",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ],
+      "accept": {
+        "application/json": [".json"],
+        "text/csv": [".csv"]
+      }
+    }
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "focus-existing",
+      "auto"
+    ]
+  },
+  "protocol_handlers": [
+    {
+      "protocol": "web+pos",
+      "url": "/?handler=%s"
+    },
+    {
+      "protocol": "web+zafar",
+      "url": "/?handler=%s"
+    }
+  ],
+  "share_target": {
+    "action": "/?action=shared-content",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "edge_side_panel": {
+    "preferred_width": 400
+  }
+}

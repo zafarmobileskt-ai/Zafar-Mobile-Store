@@ -1,0 +1,8 @@
+{
+  "name": "ZAFAR MOBILE STORE",
+  "description": "Mobile shop inventory & POS system with IMEI tracking, customer credit/debit Khata ledger (receivables & payables), phone contact importing, warranty receipts, and profit analytics.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
