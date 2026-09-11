@@ -162,9 +162,15 @@ export const CustomersView: React.FC = () => {
 
   // Filtered and Sorted Customers
   const filteredCustomers = useMemo(() => {
-    return customers.filter((cust) => {
-      const meta = customerMetaMap.get(cust.id);
-      const ledger = meta?.ledger;
+    const seenIds = new Set<string>();
+
+    return customers
+      .filter((cust) => {
+        if (!cust || !cust.id || seenIds.has(cust.id)) return false;
+        seenIds.add(cust.id);
+
+        const meta = customerMetaMap.get(cust.id);
+        const ledger = meta?.ledger;
 
       // Balance Filter
       if (balanceFilter === 'receivable') {

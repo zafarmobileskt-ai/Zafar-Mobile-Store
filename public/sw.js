@@ -1,5 +1,5 @@
 // Service Worker for ZAFAR MOBILE STORE - POS & Management
-const CACHE_NAME = 'zafar-pos-cache-v2';
+const CACHE_NAME = 'zafar-pos-cache-v3';
 const OFFLINE_URL = '/offline.html';
 
 const ASSETS_TO_CACHE = [

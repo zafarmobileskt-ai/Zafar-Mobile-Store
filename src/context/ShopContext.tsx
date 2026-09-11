@@ -124,35 +124,151 @@ const SALES_STORAGE_KEY = 'zafar_mobile_sales_v1';
 const CUSTOMERS_STORAGE_KEY = 'zafar_mobile_customers_v1';
 const SETTINGS_STORAGE_KEY = 'zafar_mobile_settings_v1';
 
+// Helper to generate guaranteed collision-resistant unique IDs
+const generateSecureId = (prefix: string, existingList?: Array<{ id?: string; saleId?: string }>): string => {
+  let id = '';
+  let count = 0;
+  do {
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
+    id = `${prefix}-${timestamp}-${randomHex}${count > 0 ? `-${count}` : ''}`;
+    count++;
+  } while (
+    existingList && 
+    existingList.some((item) => item.id === id || item.saleId === id) && 
+    count < 100
+  );
+  return id;
+};
+
+// Sanitizer to heal any corrupted state, merge duplicates, and ensure strict key uniqueness
+const sanitizeCustomersList = (list: Customer[]): Customer[] => {
+  if (!Array.isArray(list)) return [];
+  const result: Customer[] = [];
+  const seenIds = new Set<string>();
+
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const cust: Customer = { ...item };
+    
+    // Normalize phone and name for duplicate detection
+    const cleanPhone = cust.phone ? cust.phone.replace(/\D/g, '') : '';
+    const cleanName = (cust.name || '').trim().toLowerCase();
+
+    // Check if an identical customer profile already exists in the accumulator
+    const existingIndex = result.findIndex((existing) => {
+      if (existing.id === cust.id) return true;
+      if (cleanPhone && existing.phone) {
+        const existingCleanPhone = existing.phone.replace(/\D/g, '');
+        if (existingCleanPhone && existingCleanPhone === cleanPhone) return true;
+      }
+      if (cleanName && existing.name && existing.name.trim().toLowerCase() === cleanName && (!cleanPhone || !existing.phone)) {
+        return true;
+      }
+      return false;
+    });
+
+    if (existingIndex >= 0) {
+      // Merge ledger entries, manual purchases, tags, and preferences into existing profile
+      const existing = result[existingIndex];
+      const existingLedgerIds = new Set((existing.ledgerEntries || []).map((l) => l.id));
+      const extraLedger = (cust.ledgerEntries || []).filter((l) => !existingLedgerIds.has(l.id));
+      
+      const existingManualIds = new Set((existing.manualPurchases || []).map((m) => m.id));
+      const extraManual = (cust.manualPurchases || []).filter((m) => !existingManualIds.has(m.id));
+
+      result[existingIndex] = {
+        ...existing,
+        name: existing.name || cust.name,
+        email: existing.email || cust.email,
+        address: existing.address || cust.address,
+        cnicOrGovId: existing.cnicOrGovId || cust.cnicOrGovId,
+        tags: Array.from(new Set([...(existing.tags || []), ...(cust.tags || [])])),
+        preferences: {
+          preferredBrands: Array.from(new Set([...(existing.preferences?.preferredBrands || []), ...(cust.preferences?.preferredBrands || [])])),
+          whatsappAlerts: existing.preferences?.whatsappAlerts ?? cust.preferences?.whatsappAlerts ?? true,
+        },
+        ledgerEntries: [...(existing.ledgerEntries || []), ...extraLedger],
+        manualPurchases: [...(existing.manualPurchases || []), ...extraManual],
+      };
+      // Skip pushing duplicate item
+      continue;
+    }
+
+    // Ensure ID is present and unique
+    if (!cust.id || seenIds.has(cust.id)) {
+      cust.id = generateSecureId('CUST', result);
+    }
+
+    seenIds.add(cust.id);
+    result.push(cust);
+  }
+
+  return result;
+};
+
+const sanitizeInventoryList = (list: MobileItem[]): MobileItem[] => {
+  if (!Array.isArray(list)) return [];
+  const result: MobileItem[] = [];
+  const seenIds = new Set<string>();
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const finalItem = { ...item };
+    if (!finalItem.id || seenIds.has(finalItem.id)) {
+      finalItem.id = generateSecureId('MOB', result);
+    }
+    seenIds.add(finalItem.id);
+    result.push(finalItem);
+  }
+  return result;
+};
+
+const sanitizeSalesList = (list: SaleRecord[]): SaleRecord[] => {
+  if (!Array.isArray(list)) return [];
+  const result: SaleRecord[] = [];
+  const seenIds = new Set<string>();
+  for (const sale of list) {
+    if (!sale || typeof sale !== 'object') continue;
+    const finalSale = { ...sale };
+    const saleIdKey = finalSale.saleId || (sale as any).id;
+    if (!saleIdKey || seenIds.has(saleIdKey)) {
+      finalSale.saleId = generateSecureId('SALE', result);
+    }
+    seenIds.add(finalSale.saleId);
+    result.push(finalSale);
+  }
+  return result;
+};
+
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [inventory, setInventory] = useState<MobileItem[]>(() => {
     try {
       const saved = localStorage.getItem(INVENTORY_STORAGE_KEY) || localStorage.getItem('apex_mobile_inventory_v1');
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeInventoryList(JSON.parse(saved));
     } catch (e) {
       console.error('Failed reading inventory from localStorage', e);
     }
-    return sampleInventory;
+    return sanitizeInventoryList(sampleInventory);
   });
 
   const [sales, setSales] = useState<SaleRecord[]>(() => {
     try {
       const saved = localStorage.getItem(SALES_STORAGE_KEY) || localStorage.getItem('apex_mobile_sales_v1');
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeSalesList(JSON.parse(saved));
     } catch (e) {
       console.error('Failed reading sales from localStorage', e);
     }
-    return sampleSales;
+    return sanitizeSalesList(sampleSales);
   });
 
   const [customers, setCustomers] = useState<Customer[]>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeCustomersList(JSON.parse(saved));
     } catch (e) {
       console.error('Failed reading customers from localStorage', e);
     }
-    return sampleCustomers;
+    return sanitizeCustomersList(sampleCustomers);
   });
 
   const [settings, setSettings] = useState<ShopSettings>(() => {
@@ -234,7 +350,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addMobile = (data: Omit<MobileItem, 'id' | 'createdAt' | 'updatedAt'>): MobileItem => {
     const now = new Date().toISOString();
-    const newId = `MOB-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    const newId = generateSecureId('MOB', inventory);
     const newItem: MobileItem = {
       ...data,
       id: newId,
@@ -277,13 +393,51 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Customer Management
   const addCustomer = (data: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>): Customer => {
     const now = new Date().toISOString();
-    const newId = `CUST-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
+    const cleanName = (data.name || '').trim().toLowerCase();
+
+    // Check if customer already exists by phone or exact name
+    const existingIndex = customers.findIndex((c) => {
+      if (cleanPhone && c.phone) {
+        const existingCleanPhone = c.phone.replace(/\D/g, '');
+        if (existingCleanPhone && existingCleanPhone === cleanPhone) return true;
+      }
+      if (cleanName && c.name && c.name.trim().toLowerCase() === cleanName && (!cleanPhone || !c.phone)) {
+        return true;
+      }
+      return false;
+    });
+
+    if (existingIndex >= 0) {
+      const existing = customers[existingIndex];
+      const updated: Customer = {
+        ...existing,
+        name: data.name || existing.name,
+        email: data.email || existing.email,
+        address: data.address || existing.address,
+        cnicOrGovId: data.cnicOrGovId || existing.cnicOrGovId,
+        tags: Array.from(new Set([...(existing.tags || []), ...(data.tags || [])])),
+        preferences: {
+          preferredBrands: Array.from(new Set([...(existing.preferences?.preferredBrands || []), ...(data.preferences?.preferredBrands || [])])),
+          whatsappAlerts: data.preferences?.whatsappAlerts ?? existing.preferences?.whatsappAlerts ?? true,
+        },
+        ledgerEntries: [...(data.ledgerEntries || []), ...(existing.ledgerEntries || [])],
+        manualPurchases: [...(data.manualPurchases || []), ...(existing.manualPurchases || [])],
+        updatedAt: now,
+      };
+
+      setCustomers((prev) => prev.map((c) => (c.id === existing.id ? updated : c)));
+      return updated;
+    }
+
+    const newId = generateSecureId('CUST', customers);
     const newCustomer: Customer = {
       ...data,
       id: newId,
       tags: data.tags?.length ? data.tags : ['New Customer'],
       preferences: data.preferences || { preferredBrands: [] },
       manualPurchases: data.manualPurchases || [],
+      ledgerEntries: data.ledgerEntries || [],
       createdAt: now,
       updatedAt: now,
     };
@@ -327,7 +481,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addManualPurchaseToCustomer = (customerId: string, purchase: Omit<ManualPurchaseLog, 'id'>) => {
     const now = new Date().toISOString();
-    const purchaseId = `MP-${Date.now().toString().slice(-4)}`;
+    const purchaseId = generateSecureId('MP');
     const newPurchase: ManualPurchaseLog = {
       ...purchase,
       id: purchaseId,
@@ -371,7 +525,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     entry: Omit<CustomerLedgerEntry, 'id' | 'createdAt'>
   ): CustomerLedgerEntry => {
     const now = new Date().toISOString();
-    const entryId = `LED-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+    const entryId = generateSecureId('LED');
     const newEntry: CustomerLedgerEntry = {
       ...entry,
       id: entryId,
@@ -424,22 +578,54 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setCustomers((prev) => {
       const updated = [...prev];
+      const seenIds = new Set<string>(updated.map((c) => c.id));
+
       list.forEach((data) => {
         const cleanPhone = data.phone ? data.phone.replace(/\D/g, '') : '';
-        const existingIdx = cleanPhone ? updated.findIndex((c) => c.phone.replace(/\D/g, '') === cleanPhone) : -1;
+        const cleanName = (data.name || '').trim().toLowerCase();
+
+        // Check if matching customer exists by clean phone or exact name
+        const existingIdx = updated.findIndex((c) => {
+          if (cleanPhone && c.phone) {
+            const existingCleanPhone = c.phone.replace(/\D/g, '');
+            if (existingCleanPhone && existingCleanPhone === cleanPhone) return true;
+          }
+          if (cleanName && c.name && c.name.trim().toLowerCase() === cleanName && (!cleanPhone || !c.phone)) {
+            return true;
+          }
+          return false;
+        });
 
         if (existingIdx >= 0) {
           const existing = updated[existingIdx];
+          const existingLedgerIds = new Set((existing.ledgerEntries || []).map((l) => l.id));
+          const extraLedger = (data.ledgerEntries || []).filter((l) => !existingLedgerIds.has(l.id));
+
           updated[existingIdx] = {
             ...existing,
             name: data.name || existing.name,
             email: data.email || existing.email,
             address: data.address || existing.address,
+            cnicOrGovId: data.cnicOrGovId || existing.cnicOrGovId,
+            tags: Array.from(new Set([...(existing.tags || []), ...(data.tags || [])])),
+            preferences: {
+              preferredBrands: Array.from(new Set([...(existing.preferences?.preferredBrands || []), ...(data.preferences?.preferredBrands || [])])),
+              whatsappAlerts: data.preferences?.whatsappAlerts ?? existing.preferences?.whatsappAlerts ?? true,
+            },
+            ledgerEntries: [...(existing.ledgerEntries || []), ...extraLedger],
             openingBalance: data.openingBalance || existing.openingBalance,
             updatedAt: now,
           };
         } else {
-          const newId = `CUST-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 900 + 100)}`;
+          // Generate collision-free unique ID
+          let newId = '';
+          let count = 0;
+          do {
+            newId = generateSecureId('CUST', updated);
+            count++;
+          } while (seenIds.has(newId) && count < 100);
+
+          seenIds.add(newId);
           updated.unshift({
             ...data,
             id: newId,
@@ -642,7 +828,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         notes: `Acquired via Trade-in against ${device.brand} ${device.model} (Invoice: ${invoiceNumber})`,
       };
       
-      const newTradeInId = `MOB-TRD-${Date.now().toString().slice(-4)}`;
+      const newTradeInId = generateSecureId('MOB-TRD', inventory);
       setInventory((prev) => [
         {
           ...tradeInMobile,
@@ -695,26 +881,36 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!parsed.inventory || !Array.isArray(parsed.inventory)) {
         return { success: false, message: 'Invalid file: Missing inventory array.' };
       }
-      setInventory(parsed.inventory);
+      const cleanInventory = sanitizeInventoryList(parsed.inventory);
+      setInventory(cleanInventory);
+
+      let cleanSalesCount = 0;
       if (parsed.sales && Array.isArray(parsed.sales)) {
-        setSales(parsed.sales);
+        const cleanSales = sanitizeSalesList(parsed.sales);
+        setSales(cleanSales);
+        cleanSalesCount = cleanSales.length;
       }
+
+      let cleanCustCount = 0;
       if (parsed.customers && Array.isArray(parsed.customers)) {
-        setCustomers(parsed.customers);
+        const cleanCust = sanitizeCustomersList(parsed.customers);
+        setCustomers(cleanCust);
+        cleanCustCount = cleanCust.length;
       }
+
       if (parsed.shop) {
         setSettings(parsed.shop);
       }
-      return { success: true, message: `Successfully restored ${parsed.inventory.length} devices, ${parsed.sales?.length || 0} sales records, and ${parsed.customers?.length || 0} customer profiles.` };
+      return { success: true, message: `Successfully restored ${cleanInventory.length} devices, ${cleanSalesCount} sales records, and ${cleanCustCount} customer profiles.` };
     } catch (e: any) {
       return { success: false, message: `Failed to parse backup JSON: ${e.message}` };
     }
   };
 
   const resetToSampleData = () => {
-    setInventory(sampleInventory);
-    setSales(sampleSales);
-    setCustomers(sampleCustomers);
+    setInventory(sanitizeInventoryList(sampleInventory));
+    setSales(sanitizeSalesList(sampleSales));
+    setCustomers(sanitizeCustomersList(sampleCustomers));
     setSettings(initialSettings);
   };
 

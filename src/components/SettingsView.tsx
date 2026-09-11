@@ -118,10 +118,42 @@ export const SettingsView: React.FC = () => {
         )}
       </div>
 
+      {/* Settings Section Navigation Pills */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <a
+          href="#section-shop-info"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#141724] hover:bg-[#1b2030] text-slate-300 text-xs font-semibold border border-slate-800 transition-colors whitespace-nowrap"
+        >
+          <Store className="w-3.5 h-3.5 text-blue-400" />
+          <span>Shop Profile</span>
+        </a>
+        <a
+          href="#section-currency-warranty"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#141724] hover:bg-[#1b2030] text-slate-300 text-xs font-semibold border border-slate-800 transition-colors whitespace-nowrap"
+        >
+          <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+          <span>Currency & Warranty</span>
+        </a>
+        <a
+          href="#section-mobile-app"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#141724] hover:bg-[#1b2030] text-slate-300 text-xs font-semibold border border-slate-800 transition-colors whitespace-nowrap"
+        >
+          <Smartphone className="w-3.5 h-3.5 text-sky-400" />
+          <span>Mobile App / APK</span>
+        </a>
+        <a
+          href="#section-backup-data"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#141724] hover:bg-[#1b2030] text-slate-300 text-xs font-semibold border border-slate-800 transition-colors whitespace-nowrap"
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
+          <span>Sheets & Backup</span>
+        </a>
+      </div>
+
       <form onSubmit={handleSave} className="space-y-5">
         
         {/* Shop Identity */}
-        <div className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-4">
+        <div id="section-shop-info" className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-4 scroll-mt-20">
           <h3 className="font-bold text-white uppercase text-xs tracking-wider flex items-center gap-2">
             <Store className="w-4 h-4 text-blue-400" /> Shop Information (Appears on Customer Invoices)
           </h3>
@@ -197,7 +229,7 @@ export const SettingsView: React.FC = () => {
         </div>
 
         {/* Currency & Financials */}
-        <div className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-4">
+        <div id="section-currency-warranty" className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-4 scroll-mt-20">
           <h3 className="font-bold text-white uppercase text-xs tracking-wider flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-emerald-400" /> Currency & Default Warranty Policies
           </h3>
@@ -266,7 +298,7 @@ export const SettingsView: React.FC = () => {
       </form>
 
       {/* Mobile App & APK Installation Card */}
-      <div className="bg-gradient-to-r from-blue-950/50 via-[#131724] to-[#131724] p-5 rounded-2xl border border-blue-700/40 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div id="section-mobile-app" className="bg-gradient-to-r from-blue-950/50 via-[#131724] to-[#131724] p-5 rounded-2xl border border-blue-700/40 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 scroll-mt-20">
         <div className="flex items-center gap-3.5">
           <div className="w-11 h-11 rounded-xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400 shrink-0">
             <Smartphone className="w-6 h-6" />
@@ -295,7 +327,7 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* Backup, Spreadsheet Export & Gmail Management */}
-      <div className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-5">
+      <div id="section-backup-data" className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-5 scroll-mt-20">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-800">
           <div>
             <h3 className="font-bold text-white uppercase text-xs tracking-wider flex items-center gap-2">

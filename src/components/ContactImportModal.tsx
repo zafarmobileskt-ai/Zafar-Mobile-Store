@@ -225,7 +225,7 @@ export const ContactImportModal: React.FC = () => {
         ledgerEntries: hasBalance
           ? [
               {
-                id: `LED-IMP-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`,
+                id: `LED-IMP-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`.toUpperCase(),
                 type: d.openingType === 'receivable' ? ('debit' as const) : ('credit' as const),
                 transactionType: d.openingType === 'receivable' ? ('receivable_given' as const) : ('payable_owed' as const),
                 amount: d.openingAmount,

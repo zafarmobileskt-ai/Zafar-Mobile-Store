@@ -19,7 +19,8 @@ import {
   Barcode,
   BookOpen,
   Calendar,
-  Wallet
+  Wallet,
+  Search
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -61,6 +62,8 @@ export const PosCheckoutModal: React.FC = () => {
   const [customerCnic, setCustomerCnic] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
+  const [clientSearchQuery, setClientSearchQuery] = useState('');
+  const [isSearchingClient, setIsSearchingClient] = useState(false);
 
   // Warranty
   const [warrantyType, setWarrantyType] = useState<'Shop Checking Warranty' | 'Official Brand Warranty' | 'No Warranty' | 'Extended Dealer Warranty'>('Shop Checking Warranty');
@@ -511,34 +514,82 @@ export const PosCheckoutModal: React.FC = () => {
                 <User className="w-3.5 h-3.5 text-slate-400" /> 3. Customer Information (For Invoice & Khata)
               </h3>
               
-              {/* Existing Customer Quick Picker */}
-              {customers.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400">Existing Customer:</span>
-                  <select
-                    onChange={(e) => {
-                      const cust = customers.find((c) => c.id === e.target.value);
-                      if (cust) {
-                        setCustomerName(cust.name);
-                        setCustomerPhone(cust.phone);
-                        setCustomerCnic(cust.cnicOrGovId || '');
-                        setCustomerEmail(cust.email || '');
-                        setCustomerAddress(cust.address || '');
-                      }
-                    }}
-                    className="px-2 py-1 bg-[#12151E] border border-slate-700 rounded-md text-[11px] text-indigo-300 font-medium focus:ring-1 focus:ring-indigo-500 outline-none"
-                    defaultValue=""
-                  >
-                    <option value="" disabled>-- Select Existing Client --</option>
-                    {customers.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.phone}) {c.tags?.includes('VIP Buyer') ? '★ VIP' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              {/* Existing Customer Search & Quick Add */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSearchingClient(!isSearchingClient)}
+                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 hover:text-white rounded-md text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Search className="w-3 h-3" />
+                  <span>{isSearchingClient ? 'Close Search' : 'Find Contact'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerName('');
+                    setCustomerPhone('');
+                    setCustomerCnic('');
+                    setCustomerEmail('');
+                    setCustomerAddress('');
+                    setIsSearchingClient(false);
+                    setClientSearchQuery('');
+                  }}
+                  className="px-2 py-1 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 rounded-md text-[11px] font-semibold transition-colors cursor-pointer"
+                >
+                  + New Customer
+                </button>
+              </div>
             </div>
+
+            {/* Inline Search Popup */}
+            {isSearchingClient && (
+              <div className="p-3 bg-slate-900 border border-slate-700/80 rounded-lg space-y-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Type name or phone to search contacts..."
+                    value={clientSearchQuery}
+                    onChange={(e) => setClientSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    autoFocus
+                  />
+                </div>
+                {clientSearchQuery.trim() ? (
+                  <div className="space-y-1 max-h-36 overflow-y-auto">
+                    {customers
+                      .filter((c) => 
+                        c.name?.toLowerCase().includes(clientSearchQuery.toLowerCase()) || 
+                        c.phone?.includes(clientSearchQuery.trim())
+                      )
+                      .slice(0, 4)
+                      .map((c) => (
+                        <div
+                          key={c.id}
+                          onClick={() => {
+                            setCustomerName(c.name);
+                            setCustomerPhone(c.phone);
+                            setCustomerCnic(c.cnicOrGovId || '');
+                            setCustomerEmail(c.email || '');
+                            setCustomerAddress(c.address || '');
+                            setIsSearchingClient(false);
+                            setClientSearchQuery('');
+                          }}
+                          className="px-2.5 py-1.5 bg-slate-950/70 hover:bg-indigo-950 border border-slate-800 hover:border-indigo-600/50 rounded-md flex items-center justify-between cursor-pointer text-xs transition-colors"
+                        >
+                          <span className="font-semibold text-slate-200">{c.name}</span>
+                          <span className="text-slate-400 text-[11px]">{c.phone}</span>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-slate-400 text-center py-0.5">
+                    Type a name or phone number to search without flooding all contacts.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>

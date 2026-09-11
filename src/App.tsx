@@ -19,6 +19,7 @@ import { CustomerDetailModal } from './components/CustomerDetailModal';
 import { AddEditCustomerModal } from './components/AddEditCustomerModal';
 import { AddLedgerEntryModal } from './components/AddLedgerEntryModal';
 import { ContactImportModal } from './components/ContactImportModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 
 const ShopContent: React.FC = () => {
   const { 
@@ -49,7 +50,7 @@ const ShopContent: React.FC = () => {
       <Header />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-8">
         {activeTab === 'inventory' && <InventoryView />}
         {activeTab === 'intake' && <BuyUsedMobileView />}
         {activeTab === 'invoices' && <InvoicesView />}
@@ -59,7 +60,7 @@ const ShopContent: React.FC = () => {
       </main>
 
       {/* Footer */}
-      <footer className="bg-[#10121A] border-t border-slate-800/80 text-slate-400 text-xs py-4 px-4 sm:px-6 lg:px-8 mt-auto print:hidden">
+      <footer className="bg-[#10121A] border-t border-slate-800/80 text-slate-400 text-xs py-4 px-4 sm:px-6 lg:px-8 mt-auto mb-16 md:mb-0 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-200">{settings.shopName || 'ZAFAR MOBILE STORE'}</span>
@@ -73,6 +74,9 @@ const ShopContent: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Mobile Bottom Navigation Dock */}
+      <MobileBottomNav />
 
       {/* Modals */}
       <DeviceDetailModal />

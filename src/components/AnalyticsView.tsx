@@ -10,7 +10,9 @@ import {
   PieChart as PieChartIcon, 
   BarChart3,
   Percent,
-  CheckCircle2
+  CheckCircle2,
+  ReceiptText,
+  Boxes
 } from 'lucide-react';
 
 interface BrandStatItem {
@@ -125,46 +127,74 @@ export const AnalyticsView: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Total Stock Cost */}
-        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Physical Stock Investment</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-2xl font-black text-white">{formatCurrency(analytics.totalStockCost)}</span>
+        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Physical Stock Cost</span>
+              <div className="p-1.5 rounded-lg bg-blue-950/60 border border-blue-800/40 text-blue-400">
+                <Boxes className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-2xl font-black text-white">{formatCurrency(analytics.totalStockCost)}</span>
+            </div>
           </div>
-          <div className="mt-2 text-xs text-slate-400 flex justify-between border-t border-slate-800 pt-1.5">
+          <div className="mt-3 text-xs text-slate-400 flex justify-between border-t border-slate-800 pt-1.5">
             <span>New: <strong className="text-emerald-400">{formatCurrency(analytics.newStockCost)}</strong></span>
             <span>Used: <strong className="text-indigo-400">{formatCurrency(analytics.usedStockCost)}</strong></span>
           </div>
         </div>
 
         {/* Potential Profit */}
-        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Unrealized Potential Margin</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-2xl font-black text-emerald-400">+{formatCurrency(analytics.potentialProfit)}</span>
+        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Target Potential Margin</span>
+              <div className="p-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/40 text-emerald-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-2xl font-black text-emerald-400">+{formatCurrency(analytics.potentialProfit)}</span>
+            </div>
           </div>
-          <div className="mt-2 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
+          <div className="mt-3 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
             Target Valuation: <strong className="text-slate-200">{formatCurrency(analytics.totalTargetRevenue)}</strong>
           </div>
         </div>
 
         {/* Avg Profit / Phone */}
-        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Avg Profit / Mobile Sold</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-2xl font-black text-indigo-400">+{formatCurrency(analytics.avgProfitPerUnit)}</span>
+        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Avg Profit / Mobile Sold</span>
+              <div className="p-1.5 rounded-lg bg-indigo-950/60 border border-indigo-800/40 text-indigo-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-2xl font-black text-indigo-400">+{formatCurrency(analytics.avgProfitPerUnit)}</span>
+            </div>
           </div>
-          <div className="mt-2 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
+          <div className="mt-3 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
             Average Margin: <strong className="text-slate-200">{analytics.avgProfitMargin.toFixed(1)}%</strong>
           </div>
         </div>
 
         {/* Total Billed Revenue */}
-        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total POS Cash Flow</span>
-          <div className="flex items-baseline gap-1 mt-1">
-            <span className="text-2xl font-black text-white">{formatCurrency(analytics.totalSalesRevenue)}</span>
+        <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800/90 shadow-sm flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total POS Cash Flow</span>
+              <div className="p-1.5 rounded-lg bg-purple-950/60 border border-purple-800/40 text-purple-400">
+                <ReceiptText className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="flex items-baseline gap-1 mt-1">
+              <span className="text-2xl font-black text-white">{formatCurrency(analytics.totalSalesRevenue)}</span>
+            </div>
           </div>
-          <div className="mt-2 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
+          <div className="mt-3 text-xs text-slate-400 border-t border-slate-800 pt-1.5">
             <strong className="text-slate-200">{analytics.totalSalesCount}</strong> Completed Invoices
           </div>
         </div>

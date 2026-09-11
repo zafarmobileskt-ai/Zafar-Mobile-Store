@@ -192,19 +192,24 @@ export const BuyUsedMobileView: React.FC = () => {
       
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-[#121520] via-[#161B2E] to-[#121520] text-white p-5 rounded-2xl shadow-xl border border-slate-800 flex items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white uppercase tracking-wider">
-              Quick Mobile Intake
-            </span>
-            <span className="text-xs text-indigo-300 font-mono">Fast Form</span>
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-950/50">
+            <Smartphone className="w-6 h-6" />
           </div>
-          <h2 className="text-xl font-black text-white mt-1">
-            Mobile Device Intake Station
-          </h2>
-          <p className="text-xs text-slate-300 mt-0.5">
-            Quickly enter phone name, IMEI, condition, and purchaser/seller details
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white uppercase tracking-wider">
+                Quick Mobile Intake
+              </span>
+              <span className="text-xs text-indigo-300 font-mono">Diagnostics & Legal Form</span>
+            </div>
+            <h2 className="text-xl font-black text-white mt-1">
+              Mobile Device Intake Station
+            </h2>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Quickly enter phone name, IMEI, condition, and purchaser/seller details
+            </p>
+          </div>
         </div>
       </div>
 

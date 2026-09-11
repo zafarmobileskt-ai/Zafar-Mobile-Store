@@ -38,12 +38,14 @@ export const ImeiLookupModal: React.FC = () => {
   const cleaned = query.trim().toLowerCase();
 
   const matchedCustomers = cleaned
-    ? customers.filter((c) => 
-        c.name.toLowerCase().includes(cleaned) ||
-        c.phone.toLowerCase().includes(cleaned) ||
-        (c.email && c.email.toLowerCase().includes(cleaned)) ||
-        (c.cnicOrGovId && c.cnicOrGovId.toLowerCase().includes(cleaned))
-      )
+    ? customers
+        .filter((c) => 
+          c.name.toLowerCase().includes(cleaned) ||
+          c.phone.toLowerCase().includes(cleaned) ||
+          (c.email && c.email.toLowerCase().includes(cleaned)) ||
+          (c.cnicOrGovId && c.cnicOrGovId.toLowerCase().includes(cleaned))
+        )
+        .filter((c, idx, arr) => arr.findIndex((x) => x.id === c.id) === idx)
     : [];
 
   const matchedDevices = cleaned
