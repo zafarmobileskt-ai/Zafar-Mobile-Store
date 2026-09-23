@@ -24,7 +24,8 @@ import {
   Barcode,
   FileSpreadsheet,
   Download,
-  Printer
+  Printer,
+  Edit3
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -35,6 +36,7 @@ export const InventoryView: React.FC = () => {
     setSelectedDeviceForModal, 
     setSelectedPoliceCertDevice,
     setIsAddModalOpen, 
+    setDeviceToEdit,
     setIsPosModalOpen,
     setSelectedDeviceForSale,
     updateMobileStatus,
@@ -604,6 +606,17 @@ export const InventoryView: React.FC = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeviceToEdit(item);
+                              setIsAddModalOpen(true);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-[#1B202E] rounded-md transition-colors cursor-pointer"
+                            title="Edit saved device entry"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
                           {item.status === 'in_stock' && (
                             <button
                               onClick={() => handleSellDirect(item)}
@@ -706,6 +719,17 @@ export const InventoryView: React.FC = () => {
                       className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
                     >
                       Details
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeviceToEdit(item);
+                        setIsAddModalOpen(true);
+                      }}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
+                      title="Edit saved device entry"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
                     </button>
                     {item.status === 'in_stock' && (
                       <button

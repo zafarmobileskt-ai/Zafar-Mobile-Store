@@ -20,7 +20,8 @@ import {
   BookOpen,
   Calendar,
   Wallet,
-  Search
+  Search,
+  RotateCcw
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -47,6 +48,7 @@ export const PosCheckoutModal: React.FC = () => {
   // Sale details
   const [soldPrice, setSoldPrice] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
+  const [saleDate, setSaleDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Bank Transfer' | 'Debit/Credit Card' | 'Split Payment' | 'Trade-In Balance'>('Cash');
   const [soldBy, setSoldBy] = useState<string>(settings.ownerName || 'Staff');
   const [notes, setNotes] = useState<string>('');
@@ -78,6 +80,27 @@ export const PosCheckoutModal: React.FC = () => {
   const [tradeInCondition, setTradeInCondition] = useState<ConditionGrade>('Grade A (Minor Wear)');
   const [tradeInValue, setTradeInValue] = useState<number>(0);
   const [tradeInBattery, setTradeInBattery] = useState<number>(85);
+
+  // Helper to reset customer & sale form to clean state (avoids carrying over old data)
+  const resetSaleForm = () => {
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerCnic('');
+    setCustomerEmail('');
+    setCustomerAddress('');
+    setClientSearchQuery('');
+    setIsSearchingClient(false);
+    setDiscount(0);
+    setPaymentMethod('Cash');
+    setPaymentType('full');
+    setCreditDueDate('');
+    setNotes('');
+    setIsTradeIn(false);
+    setTradeInModel('');
+    setTradeInImei('');
+    setTradeInValue(0);
+    setSaleDate(new Date().toISOString().split('T')[0]);
+  };
 
   // When selectedDeviceForSale changes or modal opens
   useEffect(() => {
@@ -156,6 +179,7 @@ export const PosCheckoutModal: React.FC = () => {
       soldPrice: Number(soldPrice),
       discount: Number(discount),
       paymentMethod: paymentType === 'credit' ? 'Credit' : paymentMethod,
+      saleDate: saleDate ? new Date(saleDate).toISOString() : new Date().toISOString(),
       customer: {
         name: customerName.trim(),
         phone: customerPhone.trim(),
@@ -194,10 +218,19 @@ export const PosCheckoutModal: React.FC = () => {
       });
     } catch (err) {}
 
+    // Reset customer and sale form so subsequent checkouts never display old data
+    resetSaleForm();
+
     // Close checkout and immediately open the printable invoice modal
     setIsPosModalOpen(false);
     setSelectedDeviceForSale(null);
     setSelectedInvoiceForModal(sale);
+  };
+
+  const handleClose = () => {
+    resetSaleForm();
+    setIsPosModalOpen(false);
+    setSelectedDeviceForSale(null);
   };
 
   return (
@@ -216,10 +249,7 @@ export const PosCheckoutModal: React.FC = () => {
             </div>
           </div>
           <button
-            onClick={() => {
-              setIsPosModalOpen(false);
-              setSelectedDeviceForSale(null);
-            }}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -279,10 +309,33 @@ export const PosCheckoutModal: React.FC = () => {
           {/* Section 2: Pricing, Discount & Margin */}
           <div className="bg-[#0E1B17] p-4 rounded-xl border border-emerald-900/60 space-y-3">
             <h3 className="font-bold text-emerald-300 uppercase tracking-wider text-[11px]">
-              2. Selling Price, Payment & Khata Terms ({settings.currencySymbol})
+              2. Selling Price, Date & Khata Terms ({settings.currencySymbol})
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-emerald-300 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Sale Date *</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setSaleDate(new Date().toISOString().split('T')[0])}
+                    className="text-[9px] text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                  >
+                    Today
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  required
+                  value={saleDate}
+                  onChange={(e) => setSaleDate(e.target.value)}
+                  className="w-full px-2.5 py-2 bg-[#08130F] border border-emerald-700/60 rounded-lg text-xs font-semibold text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 mb-1">
                   Sale Price / Agreed Price *
@@ -701,13 +754,19 @@ export const PosCheckoutModal: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setIsPosModalOpen(false);
-                  setSelectedDeviceForSale(null);
-                }}
+                onClick={resetSaleForm}
+                className="px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+                title="Reset customer & sale inputs"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Clear Form</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleClose}
                 className="px-4 py-2.5 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-[#171B26] transition-all cursor-pointer"
               >
                 Cancel

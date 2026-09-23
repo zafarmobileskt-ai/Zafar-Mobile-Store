@@ -44,8 +44,10 @@ interface ShopContextType {
   getCustomerById: (id: string) => Customer | undefined;
   getCustomerByPhone: (phone: string) => Customer | undefined;
   addManualPurchaseToCustomer: (customerId: string, purchase: Omit<ManualPurchaseLog, 'id'>) => void;
+  updateManualPurchase: (customerId: string, purchaseId: string, updates: Partial<ManualPurchaseLog>) => void;
   deleteManualPurchase: (customerId: string, purchaseId: string) => void;
   addCustomerLedgerEntry: (customerId: string, entry: Omit<CustomerLedgerEntry, 'id' | 'createdAt'>) => CustomerLedgerEntry;
+  updateCustomerLedgerEntry: (customerId: string, entryId: string, updates: Partial<CustomerLedgerEntry>) => void;
   deleteCustomerLedgerEntry: (customerId: string, entryId: string) => void;
   importCustomersBatch: (list: Array<Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>>) => number;
 
@@ -63,7 +65,9 @@ interface ShopContextType {
     paymentType?: 'full' | 'partial' | 'credit';
     amountPaidNow?: number;
     creditDueDate?: string;
+    saleDate?: string;
   }) => SaleRecord;
+  updateSale: (saleId: string, updates: Partial<SaleRecord>) => void;
   
   // Buy Used Phone & Trade-in Operations
   recordUsedIntake: (data: Omit<MobileItem, 'id' | 'createdAt' | 'updatedAt'>) => MobileItem;
@@ -93,6 +97,10 @@ interface ShopContextType {
   setSelectedCustomerForModal: (customer: Customer | null) => void;
   customerToEdit: Customer | null;
   setCustomerToEdit: (customer: Customer | null) => void;
+  deviceToEdit: MobileItem | null;
+  setDeviceToEdit: (item: MobileItem | null) => void;
+  ledgerEntryToEdit: { customerId: string; entry: CustomerLedgerEntry } | null;
+  setLedgerEntryToEdit: (data: { customerId: string; entry: CustomerLedgerEntry } | null) => void;
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
   isAddCustomerModalOpen: boolean;
@@ -295,6 +303,8 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [selectedPoliceCertDevice, setSelectedPoliceCertDevice] = useState<MobileItem | null>(null);
   const [selectedCustomerForModal, setSelectedCustomerForModal] = useState<Customer | null>(null);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
+  const [deviceToEdit, setDeviceToEdit] = useState<MobileItem | null>(null);
+  const [ledgerEntryToEdit, setLedgerEntryToEdit] = useState<{ customerId: string; entry: CustomerLedgerEntry } | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isAddCustomerModalOpen, setIsAddCustomerModalOpen] = useState<boolean>(false);
   const [isContactImportModalOpen, setIsContactImportModalOpen] = useState<boolean>(false);
@@ -520,6 +530,32 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
+  const updateManualPurchase = (
+    customerId: string,
+    purchaseId: string,
+    updates: Partial<ManualPurchaseLog>
+  ) => {
+    const now = new Date().toISOString();
+    setCustomers((prev) =>
+      prev.map((c) => {
+        if (c.id === customerId) {
+          const updatedPurchases = (c.manualPurchases || []).map((p) => {
+            if (p.id === purchaseId) {
+              return { ...p, ...updates };
+            }
+            return p;
+          });
+          const updated = { ...c, manualPurchases: updatedPurchases, updatedAt: now };
+          if (selectedCustomerForModal?.id === customerId) {
+            setSelectedCustomerForModal(updated);
+          }
+          return updated;
+        }
+        return c;
+      })
+    );
+  };
+
   const addCustomerLedgerEntry = (
     customerId: string,
     entry: Omit<CustomerLedgerEntry, 'id' | 'createdAt'>
@@ -558,6 +594,35 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       prev.map((c) => {
         if (c.id === customerId) {
           const updatedEntries = (c.ledgerEntries || []).filter((e) => e.id !== entryId);
+          const updated = { ...c, ledgerEntries: updatedEntries, updatedAt: now };
+          if (selectedCustomerForModal?.id === customerId) {
+            setSelectedCustomerForModal(updated);
+          }
+          if (selectedCustomerForLedger?.id === customerId) {
+            setSelectedCustomerForLedger(updated);
+          }
+          return updated;
+        }
+        return c;
+      })
+    );
+  };
+
+  const updateCustomerLedgerEntry = (
+    customerId: string,
+    entryId: string,
+    updates: Partial<CustomerLedgerEntry>
+  ) => {
+    const now = new Date().toISOString();
+    setCustomers((prev) =>
+      prev.map((c) => {
+        if (c.id === customerId) {
+          const updatedEntries = (c.ledgerEntries || []).map((entry) => {
+            if (entry.id === entryId) {
+              return { ...entry, ...updates };
+            }
+            return entry;
+          });
           const updated = { ...c, ledgerEntries: updatedEntries, updatedAt: now };
           if (selectedCustomerForModal?.id === customerId) {
             setSelectedCustomerForModal(updated);
@@ -658,6 +723,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     paymentType?: 'full' | 'partial' | 'credit';
     amountPaidNow?: number;
     creditDueDate?: string;
+    saleDate?: string;
   }): SaleRecord => {
     const device = inventory.find((item) => item.id === saleInput.deviceId);
     if (!device) {
@@ -669,7 +735,9 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const profit = saleInput.soldPrice - saleInput.discount - device.purchaseCost;
     
     const now = new Date();
-    const invoiceNumber = `INV-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const effectiveSaleDate = saleInput.saleDate ? new Date(saleInput.saleDate).toISOString() : now.toISOString();
+    const dateForInvoice = new Date(effectiveSaleDate);
+    const invoiceNumber = `INV-${dateForInvoice.getFullYear()}${(dateForInvoice.getMonth() + 1).toString().padStart(2, '0')}-${Math.floor(1000 + Math.random() * 9000)}`;
     const saleId = `SALE-${Date.now().toString().slice(-5)}`;
 
     const saleRecord: SaleRecord = {
@@ -680,7 +748,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deviceTitle: `${device.brand} ${device.model} (${device.storage}${device.ram ? ` / ${device.ram}` : ''} - ${device.color})`,
       imei1: device.imei1,
       imei2: device.imei2,
-      saleDate: now.toISOString(),
+      saleDate: effectiveSaleDate,
       purchaseCost: device.purchaseCost,
       soldPrice: saleInput.soldPrice,
       discount: saleInput.discount,
@@ -738,7 +806,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
           type: 'debit',
           transactionType: 'receivable_given',
           amount: unpaidBalance,
-          date: now.toISOString(),
+          date: effectiveSaleDate,
           description: `Sale on Credit: ${device.brand} ${device.model} (Invoice: ${invoiceNumber})`,
           paymentMethod: mapPaymentMethod(saleInput.paymentMethod),
           referenceInvoiceOrBill: invoiceNumber,
@@ -842,6 +910,39 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setSales((prev) => [saleRecord, ...prev]);
     return saleRecord;
+  };
+
+  const updateSale = (saleId: string, updates: Partial<SaleRecord>) => {
+    setSales((prev) =>
+      prev.map((sale) => {
+        if (sale.saleId === saleId) {
+          const updated = { ...sale, ...updates };
+          if (selectedInvoiceForModal?.saleId === saleId) {
+            setSelectedInvoiceForModal(updated);
+          }
+          return updated;
+        }
+        return sale;
+      })
+    );
+
+    // If saleDate was modified, synchronize linked inventory device's saleRecord if exists
+    if (updates.saleDate) {
+      setInventory((prev) =>
+        prev.map((item) => {
+          if (item.saleRecord && (item.saleRecord.saleId === saleId)) {
+            return {
+              ...item,
+              saleRecord: {
+                ...item.saleRecord,
+                ...updates,
+              },
+            };
+          }
+          return item;
+        })
+      );
+    }
   };
 
   const recordUsedIntake = (data: Omit<MobileItem, 'id' | 'createdAt' | 'updatedAt'>): MobileItem => {
@@ -965,11 +1066,14 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         getCustomerById,
         getCustomerByPhone,
         addManualPurchaseToCustomer,
+        updateManualPurchase,
         deleteManualPurchase,
         addCustomerLedgerEntry,
+        updateCustomerLedgerEntry,
         deleteCustomerLedgerEntry,
         importCustomersBatch,
         recordSale,
+        updateSale,
         recordUsedIntake,
         updateSettings,
         formatCurrency,
@@ -991,6 +1095,10 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSelectedCustomerForModal,
         customerToEdit,
         setCustomerToEdit,
+        deviceToEdit,
+        setDeviceToEdit,
+        ledgerEntryToEdit,
+        setLedgerEntryToEdit,
         isAddModalOpen,
         setIsAddModalOpen,
         isAddCustomerModalOpen,

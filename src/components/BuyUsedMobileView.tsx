@@ -20,7 +20,9 @@ import {
   ChevronUp,
   ShieldCheck,
   Printer,
-  FileText
+  FileText,
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -46,6 +48,9 @@ export const BuyUsedMobileView: React.FC = () => {
 
   // 3. IMEI
   const [imei1, setImei1] = useState('');
+
+  // Date of Data / Intake Date
+  const [intakeDate, setIntakeDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
 
   // 4. Purchaser / Seller Info & Pricing
   const [sellerName, setSellerName] = useState('');
@@ -141,7 +146,7 @@ export const BuyUsedMobileView: React.FC = () => {
       purchaseCost: cost,
       sellingPriceTarget: target,
       minPrice: cost > 0 ? Math.round(cost * 1.05) : target,
-      purchaseDate: new Date().toISOString(),
+      purchaseDate: intakeDate ? new Date(intakeDate).toISOString() : new Date().toISOString(),
       supplierOrSeller: {
         name: sellerName.trim() || (deviceType === 'new' ? 'Distributor / Supplier' : 'Walk-in Customer'),
         fatherName: sellerFatherName.trim() || undefined,
@@ -161,7 +166,7 @@ export const BuyUsedMobileView: React.FC = () => {
         affidavitSigned,
         sellerThumbprintCaptured: true,
         verifiedByOfficerOrStaff: settings.ownerName || 'Store Manager',
-        verificationDate: new Date().toISOString(),
+        verificationDate: intakeDate ? new Date(intakeDate).toISOString() : new Date().toISOString(),
         notes: `Recorded on intake by ${settings.shopName}. Stolen/lost status check: ${policeRecordCheck ? 'Passed' : 'Pending'}.`
       } : undefined,
       status: 'in_stock',
@@ -170,6 +175,22 @@ export const BuyUsedMobileView: React.FC = () => {
 
     setRecentlyAddedDevice(newDevice);
     setSavedSuccess(true);
+
+    // Clear all fields immediately to avoid accidental re-submission of old data
+    setPhoneName('');
+    setImei1('');
+    setImei2('');
+    setSellerName('');
+    setSellerFatherName('');
+    setSellerPhone('');
+    setSellerCnic('');
+    setSellerAddress('');
+    setPoliceStation('');
+    setAgreedPurchasePrice('');
+    setTargetSellingPrice('');
+    setColor('');
+    setNotes('');
+    setIntakeDate(new Date().toISOString().split('T')[0]);
   };
 
   const handleResetForm = () => {
@@ -181,8 +202,17 @@ export const BuyUsedMobileView: React.FC = () => {
     setSellerPhone('');
     setSellerCnic('');
     setSellerAddress('');
+    setPoliceStation('');
     setAgreedPurchasePrice('');
     setTargetSellingPrice('');
+    setColor('');
+    setNotes('');
+    setStorage('128GB');
+    setConditionGrade('Grade A (Minor Wear)');
+    setBatteryHealth(88);
+    setScreenCondition('Original Pristine');
+    setNetworkStatus('PTA Approved');
+    setIntakeDate(new Date().toISOString().split('T')[0]);
     setSavedSuccess(false);
     setRecentlyAddedDevice(null);
   };
@@ -526,10 +556,33 @@ export const BuyUsedMobileView: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] font-semibold text-blue-300 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-blue-400" />
+                  <span>Date of Intake / Purchase *</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIntakeDate(new Date().toISOString().split('T')[0])}
+                  className="text-[9px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                >
+                  Today
+                </button>
+              </div>
+              <input
+                type="date"
+                required
+                value={intakeDate}
+                onChange={(e) => setIntakeDate(e.target.value)}
+                className="w-full px-2.5 py-2 bg-[#0F1118] border border-blue-700/60 rounded-lg text-xs font-semibold text-white focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
             <div>
               <label className="block text-[10px] font-semibold text-emerald-300 mb-1">
-                Purchase Cost / Buying Price ({settings.currencySymbol}) *
+                Purchase Cost ({settings.currencySymbol}) *
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-2 text-slate-500 font-bold">{settings.currencySymbol}</span>
@@ -670,8 +723,17 @@ export const BuyUsedMobileView: React.FC = () => {
           )}
         </div>
 
-        {/* Submit */}
-        <div className="flex items-center justify-end gap-3 pt-2">
+        {/* Submit & Form Reset */}
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <button
+            type="button"
+            onClick={handleResetForm}
+            className="px-3.5 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+            title="Clear all fields to start fresh"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Clear Form</span>
+          </button>
           <button
             type="submit"
             className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-blue-900/40 flex items-center gap-2 transition-all cursor-pointer"

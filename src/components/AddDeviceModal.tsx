@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useShop } from '../context/ShopContext';
 import { 
   DeviceType, 
@@ -21,18 +21,35 @@ import {
   ChevronUp,
   PackageCheck,
   Check,
-  ShieldCheck
+  ShieldCheck,
+  Calendar,
+  RotateCcw,
+  Edit3
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 export const AddDeviceModal: React.FC = () => {
-  const { isAddModalOpen, setIsAddModalOpen, addMobile, settings, formatCurrency } = useShop();
+  const { 
+    isAddModalOpen, 
+    setIsAddModalOpen, 
+    addMobile, 
+    updateMobile,
+    deviceToEdit,
+    setDeviceToEdit,
+    settings, 
+    formatCurrency 
+  } = useShop();
+
+  const isEditing = Boolean(deviceToEdit);
 
   // Core Essential Fields
   const [deviceType, setDeviceType] = useState<DeviceType>('new');
   const [phoneName, setPhoneName] = useState('');
   const [brand, setBrand] = useState('Apple');
   const [imei1, setImei1] = useState('');
+  
+  // Date of Data / Purchase Date
+  const [purchaseDate, setPurchaseDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   
   // Purchaser / Seller Info & Pricing
   const [purchaserName, setPurchaserName] = useState('');
@@ -61,7 +78,75 @@ export const AddDeviceModal: React.FC = () => {
   const [networkStatus, setNetworkStatus] = useState<NetworkStatus>('PTA Approved');
   const [notes, setNotes] = useState('');
 
+  // Complete reset to clean defaults (ensures no old data is retained on subsequent forms)
+  const resetForm = () => {
+    setDeviceType('new');
+    setPhoneName('');
+    setBrand('Apple');
+    setImei1('');
+    setImei2('');
+    setPurchaseCost('');
+    setSellingPriceTarget('');
+    setPurchaserName('');
+    setPurchaserFatherName('');
+    setPurchaserPhone('');
+    setPurchaserCnic('');
+    setPurchaserAddress('');
+    setPoliceStation('');
+    setPoliceRecordCheck(true);
+    setAffidavitSigned(true);
+    setStorage('128GB');
+    setColor('');
+    setConditionGrade('Grade A+ (Flawless)');
+    setBatteryHealth(90);
+    setScreenCondition('Original Pristine');
+    setNetworkStatus('PTA Approved');
+    setNotes('');
+    setShowAdvanced(false);
+    setPurchaseDate(new Date().toISOString().split('T')[0]);
+  };
+
+  // Populate from deviceToEdit if editing, otherwise reset
+  useEffect(() => {
+    if (isAddModalOpen) {
+      if (deviceToEdit) {
+        setDeviceType(deviceToEdit.deviceType || 'new');
+        setPhoneName(deviceToEdit.model || '');
+        setBrand(deviceToEdit.brand || 'Apple');
+        setImei1(deviceToEdit.imei1 || '');
+        setImei2(deviceToEdit.imei2 || '');
+        setPurchaseCost(deviceToEdit.purchaseCost ?? '');
+        setSellingPriceTarget(deviceToEdit.sellingPriceTarget ?? '');
+        setPurchaserName(deviceToEdit.supplierOrSeller?.name || '');
+        setPurchaserFatherName(deviceToEdit.supplierOrSeller?.fatherName || '');
+        setPurchaserPhone(deviceToEdit.supplierOrSeller?.phone || '');
+        setPurchaserCnic(deviceToEdit.supplierOrSeller?.cnicOrGovId || '');
+        setPurchaserAddress(deviceToEdit.supplierOrSeller?.address || '');
+        setPoliceStation(deviceToEdit.policeProtection?.policeStationJurisdiction || '');
+        setPoliceRecordCheck(deviceToEdit.policeProtection?.policeRecordCheck ?? true);
+        setAffidavitSigned(deviceToEdit.policeProtection?.affidavitSigned ?? true);
+        setStorage(deviceToEdit.storage || '128GB');
+        setColor(deviceToEdit.color || '');
+        setConditionGrade(deviceToEdit.conditionGrade || 'Grade A+ (Flawless)');
+        setBatteryHealth(deviceToEdit.batteryHealth ?? 90);
+        setScreenCondition(deviceToEdit.screenCondition || 'Original Pristine');
+        setNetworkStatus(deviceToEdit.networkStatus || 'PTA Approved');
+        setNotes(deviceToEdit.notes || '');
+        setPurchaseDate(deviceToEdit.purchaseDate ? deviceToEdit.purchaseDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+        setShowAdvanced(true);
+      } else {
+        resetForm();
+      }
+    }
+  }, [isAddModalOpen, deviceToEdit]);
+
   if (!isAddModalOpen) return null;
+
+  const handleClose = () => {
+    resetForm();
+    setDeviceToEdit(null);
+    setIsAddModalOpen(false);
+  };
 
   const popularBrands = [
     'Apple', 'Samsung', 'Xiaomi', 'Vivo', 'Oppo', 'OnePlus', 'Realme', 'Infinix', 'Tecno', 'Google', 'Other'
@@ -119,49 +204,94 @@ export const AddDeviceModal: React.FC = () => {
     else if (lowerName.includes('tecno')) detectedBrand = 'Tecno';
     else if (lowerName.includes('pixel') || lowerName.includes('google')) detectedBrand = 'Google';
 
-    addMobile({
-      deviceType,
-      brand: detectedBrand,
-      model: phoneName.trim(),
-      storage,
-      color: color.trim() || 'Standard',
-      imei1: imei1.trim(),
-      imei2: imei2.trim() || undefined,
-      conditionGrade: deviceType === 'new' ? 'Brand New (Box Pack)' : conditionGrade,
-      batteryHealth: deviceType === 'used' && batteryHealth !== '' ? Number(batteryHealth) : undefined,
-      screenCondition: deviceType === 'used' ? screenCondition : undefined,
-      accessories: deviceType === 'new' ? ['Original Box', 'Original Charger / Adapter', 'USB Cable'] : ['Original Box', 'USB Cable'],
-      networkStatus,
-      purchaseCost: cost,
-      sellingPriceTarget: targetPrice,
-      minPrice: cost > 0 ? Math.round(cost * 1.05) : targetPrice,
-      purchaseDate: new Date().toISOString(),
-      supplierOrSeller: {
-        name: purchaserName.trim() || (deviceType === 'new' ? 'Distributor / Supplier' : 'Walk-in Customer'),
-        fatherName: purchaserFatherName.trim() || undefined,
-        phone: purchaserPhone.trim(),
-        cnicOrGovId: purchaserCnic.trim() || undefined,
-        address: purchaserAddress.trim() || undefined,
-        type: deviceType === 'new' ? 'Distributor' : 'Walk-in Customer',
-      },
-      policeProtection: deviceType === 'used' || purchaserCnic.trim() ? {
-        verificationStatus: policeRecordCheck ? 'verified' : 'pending',
-        policeRecordCheck,
-        idCardFrontUploaded: !!purchaserCnic.trim(),
-        idCardNumber: purchaserCnic.trim() || undefined,
-        sellerFatherName: purchaserFatherName.trim() || undefined,
-        sellerCityAddress: purchaserAddress.trim() || undefined,
-        policeStationJurisdiction: policeStation.trim() || 'Local District Police Station',
-        affidavitSigned,
-        sellerThumbprintCaptured: true,
-        verifiedByOfficerOrStaff: settings.ownerName || 'Store Manager',
-        verificationDate: new Date().toISOString(),
-        notes: `Recorded on intake by ${settings.shopName}. Stolen check: ${policeRecordCheck ? 'Passed' : 'Pending'}.`
-      } : undefined,
-      status: 'in_stock',
-      notes: notes.trim() || undefined,
-    });
+    if (deviceToEdit) {
+      updateMobile(deviceToEdit.id, {
+        deviceType,
+        brand: detectedBrand,
+        model: phoneName.trim(),
+        storage,
+        color: color.trim() || 'Standard',
+        imei1: imei1.trim(),
+        imei2: imei2.trim() || undefined,
+        conditionGrade: deviceType === 'new' ? 'Brand New (Box Pack)' : conditionGrade,
+        batteryHealth: deviceType === 'used' && batteryHealth !== '' ? Number(batteryHealth) : undefined,
+        screenCondition: deviceType === 'used' ? screenCondition : undefined,
+        networkStatus,
+        purchaseCost: cost,
+        sellingPriceTarget: targetPrice,
+        minPrice: cost > 0 ? Math.round(cost * 1.05) : targetPrice,
+        purchaseDate: purchaseDate ? new Date(purchaseDate).toISOString() : deviceToEdit.purchaseDate,
+        supplierOrSeller: {
+          name: purchaserName.trim() || (deviceType === 'new' ? 'Distributor / Supplier' : 'Walk-in Customer'),
+          fatherName: purchaserFatherName.trim() || undefined,
+          phone: purchaserPhone.trim(),
+          cnicOrGovId: purchaserCnic.trim() || undefined,
+          address: purchaserAddress.trim() || undefined,
+          type: deviceType === 'new' ? 'Distributor' : 'Walk-in Customer',
+        },
+        policeProtection: (deviceType === 'used' || purchaserCnic.trim()) ? {
+          verificationStatus: policeRecordCheck ? 'verified' : 'pending',
+          policeRecordCheck,
+          idCardFrontUploaded: !!purchaserCnic.trim(),
+          idCardNumber: purchaserCnic.trim() || undefined,
+          sellerFatherName: purchaserFatherName.trim() || undefined,
+          sellerCityAddress: purchaserAddress.trim() || undefined,
+          policeStationJurisdiction: policeStation.trim() || 'Local District Police Station',
+          affidavitSigned,
+          sellerThumbprintCaptured: true,
+          verifiedByOfficerOrStaff: settings.ownerName || 'Store Manager',
+          verificationDate: purchaseDate ? new Date(purchaseDate).toISOString() : new Date().toISOString(),
+          notes: `Recorded on intake by ${settings.shopName}. Stolen check: ${policeRecordCheck ? 'Passed' : 'Pending'}.`
+        } : undefined,
+        notes: notes.trim() || undefined,
+      });
+    } else {
+      addMobile({
+        deviceType,
+        brand: detectedBrand,
+        model: phoneName.trim(),
+        storage,
+        color: color.trim() || 'Standard',
+        imei1: imei1.trim(),
+        imei2: imei2.trim() || undefined,
+        conditionGrade: deviceType === 'new' ? 'Brand New (Box Pack)' : conditionGrade,
+        batteryHealth: deviceType === 'used' && batteryHealth !== '' ? Number(batteryHealth) : undefined,
+        screenCondition: deviceType === 'used' ? screenCondition : undefined,
+        accessories: deviceType === 'new' ? ['Original Box', 'Original Charger / Adapter', 'USB Cable'] : ['Original Box', 'USB Cable'],
+        networkStatus,
+        purchaseCost: cost,
+        sellingPriceTarget: targetPrice,
+        minPrice: cost > 0 ? Math.round(cost * 1.05) : targetPrice,
+        purchaseDate: purchaseDate ? new Date(purchaseDate).toISOString() : new Date().toISOString(),
+        supplierOrSeller: {
+          name: purchaserName.trim() || (deviceType === 'new' ? 'Distributor / Supplier' : 'Walk-in Customer'),
+          fatherName: purchaserFatherName.trim() || undefined,
+          phone: purchaserPhone.trim(),
+          cnicOrGovId: purchaserCnic.trim() || undefined,
+          address: purchaserAddress.trim() || undefined,
+          type: deviceType === 'new' ? 'Distributor' : 'Walk-in Customer',
+        },
+        policeProtection: deviceType === 'used' || purchaserCnic.trim() ? {
+          verificationStatus: policeRecordCheck ? 'verified' : 'pending',
+          policeRecordCheck,
+          idCardFrontUploaded: !!purchaserCnic.trim(),
+          idCardNumber: purchaserCnic.trim() || undefined,
+          sellerFatherName: purchaserFatherName.trim() || undefined,
+          sellerCityAddress: purchaserAddress.trim() || undefined,
+          policeStationJurisdiction: policeStation.trim() || 'Local District Police Station',
+          affidavitSigned,
+          sellerThumbprintCaptured: true,
+          verifiedByOfficerOrStaff: settings.ownerName || 'Store Manager',
+          verificationDate: purchaseDate ? new Date(purchaseDate).toISOString() : new Date().toISOString(),
+          notes: `Recorded on intake by ${settings.shopName}. Stolen check: ${policeRecordCheck ? 'Passed' : 'Pending'}.`
+        } : undefined,
+        status: 'in_stock',
+        notes: notes.trim() || undefined,
+      });
+    }
 
+    resetForm();
+    setDeviceToEdit(null);
     setIsAddModalOpen(false);
   };
 
@@ -172,16 +302,27 @@ export const AddDeviceModal: React.FC = () => {
         {/* Header */}
         <div className="bg-[#0B0D14] text-white px-5 py-3.5 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-600 rounded-lg text-white">
-              <PlusCircle className="w-5 h-5" />
+            <div className={`p-2 rounded-lg text-white ${isEditing ? 'bg-amber-600' : 'bg-blue-600'}`}>
+              {isEditing ? <Edit3 className="w-5 h-5" /> : <PlusCircle className="w-5 h-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Add Mobile to Stock</h2>
-              <p className="text-[11px] text-slate-400">Quick 4-step mobile entry form</p>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">
+                  {isEditing ? 'Edit Saved Device Entry' : 'Add Mobile to Stock'}
+                </h2>
+                {isEditing && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    {deviceToEdit?.id}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {isEditing ? 'Modify device details, IMEI, pricing, or purchase info' : 'Quick 4-step mobile entry form'}
+              </p>
             </div>
           </div>
           <button
-            onClick={() => setIsAddModalOpen(false)}
+            onClick={handleClose}
             className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -455,10 +596,33 @@ export const AddDeviceModal: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-semibold text-blue-300 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-blue-400" />
+                    <span>Date of Purchase *</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setPurchaseDate(new Date().toISOString().split('T')[0])}
+                    className="text-[9px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                  >
+                    Today
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  required
+                  value={purchaseDate}
+                  onChange={(e) => setPurchaseDate(e.target.value)}
+                  className="w-full px-2.5 py-2 bg-[#0F1118] border border-blue-700/60 rounded-lg text-xs font-semibold text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
               <div>
                 <label className="block text-[10px] font-semibold text-emerald-300 mb-1">
-                  Purchase Cost / Buying Price ({settings.currencySymbol}) *
+                  Purchase Cost ({settings.currencySymbol}) *
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-slate-500 font-bold">{settings.currencySymbol}</span>
@@ -482,7 +646,7 @@ export const AddDeviceModal: React.FC = () => {
 
               <div>
                 <label className="block text-[10px] font-semibold text-slate-300 mb-1">
-                  Target Selling Price ({settings.currencySymbol})
+                  Target Price ({settings.currencySymbol})
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-2 text-slate-500 font-bold">{settings.currencySymbol}</span>
@@ -598,21 +762,36 @@ export const AddDeviceModal: React.FC = () => {
           </div>
 
           {/* Form Actions */}
-          <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-800">
+          <div className="pt-2 flex items-center justify-between gap-3 border-t border-slate-800">
             <button
               type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="px-4 py-2.5 rounded-xl font-medium text-slate-300 bg-[#171B26] hover:bg-[#1E2435] border border-slate-700 transition-all cursor-pointer"
+              onClick={resetForm}
+              className="px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Reset all fields to blank / defaults"
             >
-              Cancel
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear Form</span>
             </button>
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-md shadow-blue-900/40 transition-all cursor-pointer flex items-center gap-2"
-            >
-              <PackageCheck className="w-4 h-4" />
-              <span>Save & Add Phone</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2.5 rounded-xl font-medium text-slate-300 bg-[#171B26] hover:bg-[#1E2435] border border-slate-700 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-6 py-2.5 rounded-xl font-bold text-white shadow-md transition-all cursor-pointer flex items-center gap-2 ${
+                  isEditing 
+                    ? 'bg-amber-600 hover:bg-amber-500 shadow-amber-900/40' 
+                    : 'bg-blue-600 hover:bg-blue-500 shadow-blue-900/40'
+                }`}
+              >
+                {isEditing ? <Check className="w-4 h-4" /> : <PackageCheck className="w-4 h-4" />}
+                <span>{isEditing ? 'Save Changes to Entry' : 'Save & Add Phone'}</span>
+              </button>
+            </div>
           </div>
 
         </form>

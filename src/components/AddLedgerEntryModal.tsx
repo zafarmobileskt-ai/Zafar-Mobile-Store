@@ -18,7 +18,11 @@ import {
   Smartphone,
   Upload,
   Users,
-  ClipboardList
+  ClipboardList,
+  Calendar,
+  RotateCcw,
+  Check,
+  Edit3
 } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
 import { Customer, LedgerEntryType, LedgerTransactionType } from '../types/mobile';
@@ -39,11 +43,15 @@ export const AddLedgerEntryModal: React.FC = () => {
     setSelectedCustomerForLedger,
     ledgerInitialType,
     addCustomerLedgerEntry,
+    updateCustomerLedgerEntry,
+    ledgerEntryToEdit,
+    setLedgerEntryToEdit,
     addCustomer,
     customers,
     settings
   } = useShop();
 
+  const isEditing = Boolean(ledgerEntryToEdit);
   const customer = selectedCustomerForLedger;
 
   // Mode state: whether user is changing/selecting a customer or browsing contacts
@@ -68,6 +76,7 @@ export const AddLedgerEntryModal: React.FC = () => {
   const [newCnic, setNewCnic] = useState<string>('');
   const [newOpeningAmount, setNewOpeningAmount] = useState<string>('');
   const [newOpeningType, setNewOpeningType] = useState<'none' | 'receivable' | 'payable'>('none');
+  const [newOpeningDate, setNewOpeningDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [addCustomerError, setAddCustomerError] = useState<string>('');
 
   // Form State for the Ledger Entry
@@ -76,7 +85,7 @@ export const AddLedgerEntryModal: React.FC = () => {
     ledgerInitialType === 'credit' ? 'payment_received' : 'receivable_given'
   );
   const [amount, setAmount] = useState<string>('');
-  const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [dueDate, setDueDate] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<string>('Cash');
   const [description, setDescription] = useState<string>('');
@@ -84,13 +93,64 @@ export const AddLedgerEntryModal: React.FC = () => {
   const [notes, setNotes] = useState<string>('');
   const [error, setError] = useState<string>('');
 
-  // Sync initial type
+  // Helper to reset the ledger entry inputs completely
+  const resetEntryForm = () => {
+    setAmount('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setDueDate('');
+    setPaymentMethod('Cash');
+    setDescription('');
+    setReferenceInvoiceOrBill('');
+    setNotes('');
+    setError('');
+  };
+
+  // Helper to reset inline customer form
+  const resetInlineCustomerForm = () => {
+    setNewName('');
+    setNewPhone('');
+    setNewCnic('');
+    setNewOpeningAmount('');
+    setNewOpeningType('none');
+    setNewOpeningDate(new Date().toISOString().split('T')[0]);
+    setAddCustomerError('');
+  };
+
+  // Reset or populate form whenever modal opens or item to edit changes
   React.useEffect(() => {
-    if (ledgerInitialType) {
+    if (isAddLedgerModalOpen) {
+      if (ledgerEntryToEdit) {
+        const foundCustomer = customers.find((c) => c.id === ledgerEntryToEdit.customerId);
+        if (foundCustomer) {
+          setSelectedCustomerForLedger(foundCustomer);
+        }
+        setEntryType(ledgerEntryToEdit.entry.type);
+        setTransactionType(ledgerEntryToEdit.entry.transactionType);
+        setAmount(ledgerEntryToEdit.entry.amount.toString());
+        setDate(ledgerEntryToEdit.entry.date ? ledgerEntryToEdit.entry.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+        setDueDate(ledgerEntryToEdit.entry.dueDate ? ledgerEntryToEdit.entry.dueDate.split('T')[0] : '');
+        setPaymentMethod(ledgerEntryToEdit.entry.paymentMethod || 'Cash');
+        setDescription(ledgerEntryToEdit.entry.description || '');
+        setReferenceInvoiceOrBill(ledgerEntryToEdit.entry.referenceInvoiceOrBill || '');
+        setNotes(ledgerEntryToEdit.entry.notes || '');
+        setError('');
+      } else {
+        resetEntryForm();
+        resetInlineCustomerForm();
+        setSearchQuery('');
+        setPasteText('');
+        setContactAccessMessage(null);
+      }
+    }
+  }, [isAddLedgerModalOpen, ledgerEntryToEdit]);
+
+  // Sync initial type when not editing
+  React.useEffect(() => {
+    if (!ledgerEntryToEdit && ledgerInitialType) {
       setEntryType(ledgerInitialType);
       setTransactionType(ledgerInitialType === 'credit' ? 'payment_received' : 'receivable_given');
     }
-  }, [ledgerInitialType]);
+  }, [ledgerInitialType, ledgerEntryToEdit]);
 
   // Handle entry type toggle
   const handleTypeChange = (type: LedgerEntryType) => {
@@ -105,6 +165,7 @@ export const AddLedgerEntryModal: React.FC = () => {
   // Close modal and reset temporary states
   const handleClose = () => {
     setIsAddLedgerModalOpen(false);
+    setLedgerEntryToEdit(null);
     setSelectedCustomerForLedger(null);
     setIsChangingCustomer(false);
     setIsAddingNewCustomer(false);
@@ -112,16 +173,8 @@ export const AddLedgerEntryModal: React.FC = () => {
     setSearchQuery('');
     setContactListSearch('');
     setContactAccessMessage(null);
-    setAmount('');
-    setDescription('');
-    setNotes('');
-    setError('');
-    setAddCustomerError('');
-    setNewName('');
-    setNewPhone('');
-    setNewCnic('');
-    setNewOpeningAmount('');
-    setNewOpeningType('none');
+    resetEntryForm();
+    resetInlineCustomerForm();
   };
 
   // Filter existing customers matching search query in standard view (max 5)
@@ -335,7 +388,7 @@ export const AddLedgerEntryModal: React.FC = () => {
         openingBalance: hasOpening ? {
           amount: numOpening,
           type: newOpeningType as 'receivable' | 'payable',
-          date: now,
+          date: newOpeningDate ? new Date(newOpeningDate).toISOString() : now,
           notes: 'Opening balance created during Khata Entry',
         } : undefined,
         ledgerEntries: hasOpening ? [
@@ -344,7 +397,7 @@ export const AddLedgerEntryModal: React.FC = () => {
             type: newOpeningType === 'receivable' ? 'debit' : 'credit',
             transactionType: newOpeningType === 'receivable' ? 'receivable_given' : 'payable_owed',
             amount: numOpening,
-            date: now,
+            date: newOpeningDate ? new Date(newOpeningDate).toISOString() : now,
             description: `Opening Balance (${newOpeningType === 'receivable' ? 'Lene Hain' : 'Dene Hain'})`,
             paymentMethod: 'Other',
             notes: 'Initial opening balance',
@@ -358,11 +411,7 @@ export const AddLedgerEntryModal: React.FC = () => {
       setIsAddingNewCustomer(false);
       setIsChangingCustomer(false);
       setSearchQuery('');
-      setNewName('');
-      setNewPhone('');
-      setNewCnic('');
-      setNewOpeningAmount('');
-      setNewOpeningType('none');
+      resetInlineCustomerForm();
     } catch (err: any) {
       setAddCustomerError(err?.message || 'Failed to create customer');
     }
@@ -816,16 +865,28 @@ export const AddLedgerEntryModal: React.FC = () => {
                 </div>
 
                 {newOpeningType !== 'none' && (
-                  <div className="pt-1">
-                    <input
-                      type="number"
-                      step="any"
-                      min="0.01"
-                      placeholder={`Enter opening amount (${settings.currencySymbol || '$'})`}
-                      value={newOpeningAmount}
-                      onChange={(e) => setNewOpeningAmount(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-500"
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <input
+                        type="number"
+                        step="any"
+                        min="0.01"
+                        placeholder={`Opening amount (${settings.currencySymbol || '$'})`}
+                        value={newOpeningAmount}
+                        onChange={(e) => setNewOpeningAmount(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <input
+                        type="date"
+                        value={newOpeningDate}
+                        onChange={(e) => setNewOpeningDate(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-500"
+                        title="Date of Opening Balance"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -1093,23 +1154,41 @@ export const AddLedgerEntryModal: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!customer) {
+      setError('Please select or specify a customer for this ledger entry.');
+      return;
+    }
     if (!amount || numAmount <= 0) {
       setError('Please enter a valid positive amount.');
       return;
     }
 
     try {
-      addCustomerLedgerEntry(customer.id, {
-        type: entryType,
-        transactionType,
-        amount: numAmount,
-        date: new Date(date).toISOString(),
-        dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
-        paymentMethod,
-        description: description.trim() || (entryType === 'debit' ? 'Credit Given / Sale Debit' : 'Payment Received'),
-        referenceInvoiceOrBill: referenceInvoiceOrBill.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
+      if (ledgerEntryToEdit) {
+        updateCustomerLedgerEntry(ledgerEntryToEdit.customerId, ledgerEntryToEdit.entry.id, {
+          type: entryType,
+          transactionType,
+          amount: numAmount,
+          date: new Date(date).toISOString(),
+          dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+          paymentMethod,
+          description: description.trim() || (entryType === 'debit' ? 'Credit Given / Sale Debit' : 'Payment Received'),
+          referenceInvoiceOrBill: referenceInvoiceOrBill.trim() || undefined,
+          notes: notes.trim() || undefined,
+        });
+      } else {
+        addCustomerLedgerEntry(customer.id, {
+          type: entryType,
+          transactionType,
+          amount: numAmount,
+          date: new Date(date).toISOString(),
+          dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
+          paymentMethod,
+          description: description.trim() || (entryType === 'debit' ? 'Credit Given / Sale Debit' : 'Payment Received'),
+          referenceInvoiceOrBill: referenceInvoiceOrBill.trim() || undefined,
+          notes: notes.trim() || undefined,
+        });
+      }
 
       // Close & reset
       handleClose();
@@ -1127,31 +1206,46 @@ export const AddLedgerEntryModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90 sticky top-0 z-10">
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl border ${entryType === 'debit' ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'}`}>
-              {entryType === 'debit' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
+            <div className={`p-2.5 rounded-xl border ${
+              isEditing 
+                ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' 
+                : entryType === 'debit' 
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' 
+                  : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+            }`}>
+              {isEditing ? <Edit3 className="w-5 h-5" /> : entryType === 'debit' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                {entryType === 'debit' ? 'Give Credit / Add Debit' : 'Receive Payment / Add Credit'}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-bold text-slate-100">
+                  {isEditing ? 'Edit Saved Khata Entry' : entryType === 'debit' ? 'Give Credit / Add Debit' : 'Receive Payment / Add Credit'}
+                </h2>
+                {isEditing && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    {ledgerEntryToEdit?.entry.id}
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs text-slate-300 font-semibold flex items-center gap-1">
                   <User className="w-3.5 h-3.5 text-blue-400" />
-                  <span>{customer.name}</span>
+                  <span>{customer?.name || 'Customer'}</span>
                 </span>
-                {customer.phone && (
+                {customer?.phone && (
                   <span className="text-[11px] text-slate-400">({customer.phone})</span>
                 )}
                 {/* Option to change customer or switch to contact list */}
-                <button
-                  type="button"
-                  onClick={() => setIsChangingCustomer(true)}
-                  className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium ml-1 flex items-center gap-1 cursor-pointer"
-                  title="Change customer or add a different customer"
-                >
-                  <ArrowLeftRight className="w-3 h-3" />
-                  <span>Change</span>
-                </button>
+                {!isEditing && (
+                  <button
+                    type="button"
+                    onClick={() => setIsChangingCustomer(true)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 underline font-medium ml-1 flex items-center gap-1 cursor-pointer"
+                    title="Change customer or add a different customer"
+                  >
+                    <ArrowLeftRight className="w-3 h-3" />
+                    <span>Change</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1325,9 +1419,19 @@ export const AddLedgerEntryModal: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Transaction Date *
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Transaction Date *</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setDate(new Date().toISOString().split('T')[0])}
+                  className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                >
+                  Today
+                </button>
+              </div>
               <div className="relative">
                 <input
                   type="date"
@@ -1423,26 +1527,39 @@ export const AddLedgerEntryModal: React.FC = () => {
           )}
 
           {/* Actions */}
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+          <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-800">
             <button
               type="button"
-              onClick={handleClose}
-              className="px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+              onClick={resetEntryForm}
+              className="px-3 py-2 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Clear entry form fields"
             >
-              Cancel
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Clear Form</span>
             </button>
-            <button
-              type="submit"
-              id="submit-add-ledger-entry"
-              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-slate-950 rounded-xl transition-all shadow-lg cursor-pointer ${
-                entryType === 'debit'
-                  ? 'bg-amber-500 hover:bg-amber-400 shadow-amber-500/20'
-                  : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Record {entryType === 'debit' ? 'Debit (Lene Hain)' : 'Credit (Jama)'}</span>
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                id="submit-add-ledger-entry"
+                className={`flex items-center gap-2 px-6 py-2.5 text-sm font-bold text-slate-950 rounded-xl transition-all shadow-lg cursor-pointer ${
+                  isEditing
+                    ? 'bg-amber-400 hover:bg-amber-300 shadow-amber-500/30'
+                    : entryType === 'debit'
+                      ? 'bg-amber-500 hover:bg-amber-400 shadow-amber-500/20'
+                      : 'bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20'
+                }`}
+              >
+                {isEditing ? <Check className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>{isEditing ? 'Save Changes to Entry' : `Record ${entryType === 'debit' ? 'Debit (Lene Hain)' : 'Credit (Jama)'}`}</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

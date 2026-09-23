@@ -17,7 +17,10 @@ import {
   ArrowUpDown,
   Camera,
   Barcode,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Edit3,
+  Check,
+  X
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
@@ -30,7 +33,8 @@ export const InvoicesView: React.FC = () => {
     setIsPosModalOpen,
     exportSalesToSheets,
     getCustomerByPhone,
-    setSelectedCustomerForModal
+    setSelectedCustomerForModal,
+    updateSale
   } = useShop();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,6 +42,8 @@ export const InvoicesView: React.FC = () => {
   const [warrantyFilter, setWarrantyFilter] = useState<'all' | 'active' | 'expired'>('all');
   const [deviceTypeFilter, setDeviceTypeFilter] = useState<'all' | 'new' | 'used'>('all');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [editingDateSaleId, setEditingDateSaleId] = useState<string | null>(null);
+  const [tempDateValue, setTempDateValue] = useState<string>('');
 
   const now = new Date();
 
@@ -292,9 +298,54 @@ export const InvoicesView: React.FC = () => {
                             {sale.invoiceNumber}
                           </span>
                         </div>
-                        <span className="text-[11px] text-slate-400 block mt-0.5">
-                          {new Date(sale.saleDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
-                        </span>
+                        {editingDateSaleId === sale.saleId ? (
+                          <div className="mt-1 flex items-center gap-1 bg-slate-900 p-1 rounded border border-blue-500/50">
+                            <input
+                              type="date"
+                              value={tempDateValue}
+                              onChange={(e) => setTempDateValue(e.target.value)}
+                              className="px-1.5 py-0.5 bg-slate-950 border border-slate-700 rounded text-[11px] text-white outline-none focus:border-blue-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (tempDateValue) {
+                                  updateSale(sale.saleId, { saleDate: new Date(tempDateValue).toISOString() });
+                                }
+                                setEditingDateSaleId(null);
+                              }}
+                              className="p-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded cursor-pointer"
+                              title="Save Date"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingDateSaleId(null)}
+                              className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded cursor-pointer"
+                              title="Cancel"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 mt-0.5 group">
+                            <span className="text-[11px] text-slate-400 block">
+                              {new Date(sale.saleDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTempDateValue(sale.saleDate ? sale.saleDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+                                setEditingDateSaleId(sale.saleId);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 text-[10px] text-blue-400 hover:text-blue-300 p-0.5 rounded transition-opacity cursor-pointer"
+                              title="Edit saved sale date"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Device & IMEI */}
@@ -370,13 +421,23 @@ export const InvoicesView: React.FC = () => {
 
                       {/* Actions */}
                       <td className="py-3.5 px-3.5 text-right">
-                        <button
-                          onClick={() => setSelectedInvoiceForModal(sale)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#171B26] hover:bg-[#1E2435] text-slate-200 hover:text-white border border-slate-700/60 hover:border-blue-500/50 transition-all cursor-pointer"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Receipt</span>
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => setSelectedInvoiceForModal(sale)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#171B26] hover:bg-[#1E2435] text-amber-300 hover:text-amber-200 border border-slate-700/60 hover:border-amber-500/50 transition-all cursor-pointer"
+                            title="Edit invoice entry details, customer or date"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Edit</span>
+                          </button>
+                          <button
+                            onClick={() => setSelectedInvoiceForModal(sale)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#171B26] hover:bg-[#1E2435] text-slate-200 hover:text-white border border-slate-700/60 hover:border-blue-500/50 transition-all cursor-pointer"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                            <span>Receipt</span>
+                          </button>
+                        </div>
                       </td>
 
                     </tr>

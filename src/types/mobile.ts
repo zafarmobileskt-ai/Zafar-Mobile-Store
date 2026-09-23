@@ -252,3 +252,29 @@ export interface ShopSettings {
   backupGmail?: string;
   lastBackupDate?: string;
 }
+
+export interface ShopBackupData {
+  version: string;
+  timestamp: string;
+  exportedAt: string;
+  sourceApp: string;
+  metadata: {
+    inventoryCount: number;
+    salesCount: number;
+    customersCount: number;
+    shopName: string;
+  };
+  inventory: MobileItem[];
+  sales: SaleRecord[];
+  customers: Customer[];
+  settings: ShopSettings;
+}
+
+export interface DriveBackupFile {
+  id: string;
+  name: string;
+  createdTime: string;
+  modifiedTime: string;
+  size?: string;
+  description?: string;
+}

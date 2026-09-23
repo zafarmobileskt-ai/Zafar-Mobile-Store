@@ -15,7 +15,8 @@ import {
   BookOpen,
   ArrowUpRight,
   ArrowDownLeft,
-  Calendar
+  Calendar,
+  RotateCcw
 } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
 import { Customer, CustomerPreferences } from '../types/mobile';
@@ -97,6 +98,7 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
   // Opening Balance & Credit/Debit
   const [openingAmount, setOpeningAmount] = useState('');
   const [openingType, setOpeningType] = useState<'none' | 'receivable' | 'payable'>('none');
+  const [openingDate, setOpeningDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [openingDueDate, setOpeningDueDate] = useState('');
   const [openingNotes, setOpeningNotes] = useState('');
 
@@ -110,6 +112,28 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
   const [prefNotes, setPrefNotes] = useState('');
   const [generalNotes, setGeneralNotes] = useState('');
 
+  const resetCustomerForm = () => {
+    setName('');
+    setPhone('');
+    setEmail('');
+    setCnicOrGovId('');
+    setAddress('');
+    setTags(['New Customer']);
+    setOpeningAmount('');
+    setOpeningType('none');
+    setOpeningDate(new Date().toISOString().split('T')[0]);
+    setOpeningDueDate('');
+    setOpeningNotes('');
+    setPreferredBrands(['Apple', 'Samsung']);
+    setBudgetRange('$400 - $700');
+    setStoragePreference('256GB+');
+    setConditionPreference('Both New & Used');
+    setInterestedCategories(['Flagship Phones', 'Original Accessories']);
+    setWhatsappAlerts(true);
+    setPrefNotes('');
+    setGeneralNotes('');
+  };
+
   useEffect(() => {
     if (customerToEdit) {
       setName(customerToEdit.name || '');
@@ -122,11 +146,13 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
       if (customerToEdit.openingBalance && customerToEdit.openingBalance.amount > 0) {
         setOpeningAmount(customerToEdit.openingBalance.amount.toString());
         setOpeningType(customerToEdit.openingBalance.type || 'none');
+        setOpeningDate(customerToEdit.openingBalance.date?.split('T')[0] || new Date().toISOString().split('T')[0]);
         setOpeningDueDate(customerToEdit.openingBalance.dueDate?.split('T')[0] || '');
         setOpeningNotes(customerToEdit.openingBalance.notes || '');
       } else {
         setOpeningAmount('');
         setOpeningType('none');
+        setOpeningDate(new Date().toISOString().split('T')[0]);
         setOpeningDueDate('');
         setOpeningNotes('');
       }
@@ -141,25 +167,8 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
       setPrefNotes(pref.notes || '');
       setGeneralNotes(customerToEdit.notes || '');
     } else {
-      // Reset form for fresh customer
-      setName('');
-      setPhone('');
-      setEmail('');
-      setCnicOrGovId('');
-      setAddress('');
-      setTags(['New Customer']);
-      setOpeningAmount('');
-      setOpeningType('none');
-      setOpeningDueDate('');
-      setOpeningNotes('');
-      setPreferredBrands(['Apple', 'Samsung']);
-      setBudgetRange('$400 - $700');
-      setStoragePreference('256GB+');
-      setConditionPreference('Both New & Used');
-      setInterestedCategories(['Flagship Phones', 'Original Accessories']);
-      setWhatsappAlerts(true);
-      setPrefNotes('');
-      setGeneralNotes('');
+      // Reset form for fresh customer so old form data is never carried over
+      resetCustomerForm();
     }
   }, [customerToEdit, isOpen]);
 
@@ -220,7 +229,7 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
       ? {
           amount: numOpeningAmount,
           type: openingType,
-          date: nowIso,
+          date: openingDate ? new Date(openingDate).toISOString() : nowIso,
           dueDate: openingDueDate ? new Date(openingDueDate).toISOString() : undefined,
           notes: openingNotes.trim() || undefined,
         }
@@ -246,7 +255,7 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
               type: openingType === 'receivable' ? ('debit' as const) : ('credit' as const),
               transactionType: openingType === 'receivable' ? ('receivable_given' as const) : ('payable_owed' as const),
               amount: numOpeningAmount,
-              date: nowIso,
+              date: openingDate ? new Date(openingDate).toISOString() : nowIso,
               dueDate: openingDueDate ? new Date(openingDueDate).toISOString() : undefined,
               description: `Opening Balance (${openingType === 'receivable' ? 'Receivable / Lene Hain' : 'Payable / Dene Hain'})`,
               paymentMethod: 'Cash',
@@ -456,7 +465,7 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
               <span className="text-[11px] text-amber-800 font-medium">Optional initial balance</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Balance Nature
@@ -485,6 +494,31 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
                   value={openingAmount}
                   onChange={(e) => setOpeningAmount(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-slate-900 focus:ring-2 focus:ring-amber-500 focus:outline-hidden disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Balance Date</span>
+                  </label>
+                  {openingType !== 'none' && (
+                    <button
+                      type="button"
+                      onClick={() => setOpeningDate(new Date().toISOString().split('T')[0])}
+                      className="text-[10px] text-amber-700 hover:text-amber-800 underline cursor-pointer"
+                    >
+                      Today
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  disabled={openingType === 'none'}
+                  value={openingDate}
+                  onChange={(e) => setOpeningDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-amber-500 focus:outline-hidden disabled:bg-slate-100 disabled:text-slate-400"
                 />
               </div>
 
@@ -671,21 +705,34 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-md flex items-center gap-2 transition-all"
-            >
-              <Save className="w-4 h-4" />
-              <span>{customerToEdit ? 'Save Changes' : 'Save Customer Profile'}</span>
-            </button>
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
+            {!customerToEdit ? (
+              <button
+                type="button"
+                onClick={resetCustomerForm}
+                className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 font-medium"
+                title="Reset customer form fields"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Clear Form</span>
+              </button>
+            ) : <div />}
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold shadow-md flex items-center gap-2 transition-all"
+              >
+                <Save className="w-4 h-4" />
+                <span>{customerToEdit ? 'Save Changes' : 'Save Customer Profile'}</span>
+              </button>
+            </div>
           </div>
 
         </form>

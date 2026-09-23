@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { SaleRecord } from '../types/mobile';
 import { 
@@ -11,17 +11,98 @@ import {
   Mail, 
   QrCode, 
   CheckCircle2, 
-  Download 
+  Download,
+  Edit3,
+  Calendar,
+  RotateCcw,
+  Check,
+  AlertCircle
 } from 'lucide-react';
 
 export const InvoiceModal: React.FC = () => {
-  const { selectedInvoiceForModal, setSelectedInvoiceForModal, settings, formatCurrency } = useShop();
+  const { selectedInvoiceForModal, setSelectedInvoiceForModal, settings, formatCurrency, updateSale } = useShop();
+
+  const [isEditingSaleDate, setIsEditingSaleDate] = useState(false);
+  const [tempSaleDate, setTempSaleDate] = useState('');
+  const [dateSuccess, setDateSuccess] = useState(false);
+
+  // Full Entry Editing State
+  const [isEditingFullEntry, setIsEditingFullEntry] = useState(false);
+  const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerPhone, setEditCustomerPhone] = useState('');
+  const [editCustomerCnic, setEditCustomerCnic] = useState('');
+  const [editCustomerAddress, setEditCustomerAddress] = useState('');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('');
+  const [editSaleDate, setEditSaleDate] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+  const [editSoldPrice, setEditSoldPrice] = useState<number | ''>('');
+  const [fullSaveSuccess, setFullSaveSuccess] = useState(false);
 
   if (!selectedInvoiceForModal) return null;
   const invoice: SaleRecord = selectedInvoiceForModal;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleSaveSaleDate = () => {
+    if (!tempSaleDate) return;
+    const newIso = new Date(tempSaleDate).toISOString();
+    updateSale(invoice.saleId, { saleDate: newIso });
+    setIsEditingSaleDate(false);
+    setDateSuccess(true);
+    setTimeout(() => setDateSuccess(false), 2500);
+  };
+
+  const startEditFullEntry = () => {
+    setEditCustomerName(invoice.customer.name || '');
+    setEditCustomerPhone(invoice.customer.phone || '');
+    setEditCustomerCnic(invoice.customer.cnicOrGovId || '');
+    setEditCustomerAddress(invoice.customer.address || '');
+    setEditPaymentMethod(invoice.paymentMethod || 'Cash');
+    setEditSaleDate(invoice.saleDate ? invoice.saleDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+    setEditNotes(invoice.notes || '');
+    setEditSoldPrice(invoice.soldPrice || '');
+    setIsEditingFullEntry(true);
+  };
+
+  const resetEditEntryForm = () => {
+    setEditCustomerName('');
+    setEditCustomerPhone('');
+    setEditCustomerCnic('');
+    setEditCustomerAddress('');
+    setEditPaymentMethod('Cash');
+    setEditSaleDate(new Date().toISOString().split('T')[0]);
+    setEditNotes('');
+    setEditSoldPrice('');
+  };
+
+  const handleSaveFullEntry = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newDateIso = editSaleDate ? new Date(editSaleDate).toISOString() : invoice.saleDate;
+    const numPrice = Number(editSoldPrice) || invoice.soldPrice;
+    const finalAmount = numPrice - (invoice.discount || 0) - (invoice.tradeInItem?.agreedValue || 0);
+    const profit = finalAmount - (invoice.purchaseCost || 0);
+
+    updateSale(invoice.saleId, {
+      saleDate: newDateIso,
+      paymentMethod: editPaymentMethod,
+      soldPrice: numPrice,
+      finalAmount,
+      profit,
+      notes: editNotes.trim() || undefined,
+      customer: {
+        ...invoice.customer,
+        name: editCustomerName.trim() || invoice.customer.name,
+        phone: editCustomerPhone.trim() || invoice.customer.phone,
+        cnicOrGovId: editCustomerCnic.trim() || undefined,
+        address: editCustomerAddress.trim() || undefined,
+      }
+    });
+
+    setIsEditingFullEntry(false);
+    setFullSaveSuccess(true);
+    setTimeout(() => setFullSaveSuccess(false), 2500);
   };
 
   return (
@@ -33,8 +114,22 @@ export const InvoiceModal: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm">Sale Invoice & Warranty Certificate</span>
             <span className="font-mono text-xs text-slate-400">({invoice.invoiceNumber})</span>
+            {fullSaveSuccess && (
+              <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/60">
+                ✓ Entry Updated
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={startEditFullEntry}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#171B26] hover:bg-[#1E2435] text-amber-300 border border-amber-500/40 transition-all cursor-pointer shadow-sm"
+              title="Edit saved entry details (date, customer, pricing, payment)"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Entry</span>
+            </button>
             <button
               onClick={handlePrint}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-all cursor-pointer shadow-sm"
@@ -50,6 +145,159 @@ export const InvoiceModal: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Edit Full Entry Drawer / Dialog */}
+        {isEditingFullEntry && (
+          <form onSubmit={handleSaveFullEntry} className="p-5 bg-slate-900 border-b border-amber-500/30 space-y-4 print:hidden animate-in fade-in">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Edit3 className="w-4 h-4 text-amber-400" />
+                <h3 className="font-bold text-sm text-white">Edit Saved Invoice Entry</h3>
+                <span className="text-[10px] font-mono text-amber-300 px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40">
+                  {invoice.invoiceNumber}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditingFullEntry(false)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+              {/* Sale Date with Today button */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[11px] font-semibold text-slate-300">Sale Date *</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditSaleDate(new Date().toISOString().split('T')[0])}
+                    className="text-[10px] text-blue-400 hover:underline cursor-pointer"
+                  >
+                    Today
+                  </button>
+                </div>
+                <input
+                  type="date"
+                  value={editSaleDate}
+                  onChange={(e) => setEditSaleDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  required
+                />
+              </div>
+
+              {/* Customer Name */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Customer Name *</label>
+                <input
+                  type="text"
+                  value={editCustomerName}
+                  onChange={(e) => setEditCustomerName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  required
+                />
+              </div>
+
+              {/* Customer Phone */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Customer Phone *</label>
+                <input
+                  type="text"
+                  value={editCustomerPhone}
+                  onChange={(e) => setEditCustomerPhone(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  required
+                />
+              </div>
+
+              {/* Customer CNIC */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">CNIC / ID Card</label>
+                <input
+                  type="text"
+                  value={editCustomerCnic}
+                  onChange={(e) => setEditCustomerCnic(e.target.value)}
+                  placeholder="35202-xxxxxxx-x"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                />
+              </div>
+
+              {/* Payment Method */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Payment Method</label>
+                <select
+                  value={editPaymentMethod}
+                  onChange={(e) => setEditPaymentMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                >
+                  <option value="Cash">Cash</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="EasyPaisa">EasyPaisa</option>
+                  <option value="JazzCash">JazzCash</option>
+                  <option value="Debit / Credit Card">Debit / Credit Card</option>
+                  <option value="Partial / Split">Partial / Split</option>
+                  <option value="Full Credit (Khata)">Full Credit (Khata)</option>
+                </select>
+              </div>
+
+              {/* Selling Price */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                  Sold Price ({settings.currencySymbol || '$'})
+                </label>
+                <input
+                  type="number"
+                  value={editSoldPrice}
+                  onChange={(e) => setEditSoldPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Remarks / Notes */}
+            <div>
+              <label className="text-[11px] font-semibold text-slate-300 block mb-1">Remarks / Warranty Notes</label>
+              <input
+                type="text"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                placeholder="Optional warranty terms, trade-in notes, or accessories provided"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+              />
+            </div>
+
+            {/* Buttons */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={resetEditEntryForm}
+                className="px-3 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg flex items-center gap-1"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Clear Form</span>
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditingFullEntry(false)}
+                  className="px-3 py-1.5 text-xs text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 text-xs font-bold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg flex items-center gap-1.5 shadow-sm"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Save Changes to Entry</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
 
         {/* Invoice Printable Area */}
         <div className="p-6 sm:p-8 space-y-6 text-slate-200 print:text-slate-900 text-xs print:text-[11px] print:p-6" id="printable-invoice">
@@ -90,9 +338,64 @@ export const InvoiceModal: React.FC = () => {
               <span className="font-mono text-base font-black text-white print:text-slate-900 block mt-0.5">
                 {invoice.invoiceNumber}
               </span>
-              <span className="text-xs text-slate-300 print:text-slate-600 block mt-1">
-                Date: <strong>{new Date(invoice.saleDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
-              </span>
+              <div className="mt-1">
+                <span className="text-xs text-slate-300 print:text-slate-600 block">
+                  Date: <strong>{new Date(invoice.saleDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</strong>
+                </span>
+
+                {isEditingSaleDate ? (
+                  <div className="print:hidden mt-1.5 flex items-center sm:justify-end gap-1.5 flex-wrap bg-slate-900/95 p-1.5 rounded-lg border border-blue-500/50 text-xs">
+                    <span className="text-slate-300 text-[11px] font-semibold">Change Date:</span>
+                    <input
+                      type="date"
+                      value={tempSaleDate}
+                      onChange={(e) => setTempSaleDate(e.target.value)}
+                      className="px-2 py-0.5 bg-slate-950 border border-slate-700 rounded text-xs text-white outline-none focus:border-blue-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setTempSaleDate(new Date().toISOString().split('T')[0])}
+                      className="text-[10px] text-blue-400 hover:text-blue-300 underline cursor-pointer"
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveSaleDate}
+                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold rounded cursor-pointer transition-colors"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingSaleDate(false)}
+                      className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] rounded cursor-pointer transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <div className="print:hidden flex items-center sm:justify-end gap-1.5 mt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTempSaleDate(invoice.saleDate ? invoice.saleDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+                        setIsEditingSaleDate(true);
+                      }}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                      title="Edit saved invoice sale date in future"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Edit Date</span>
+                    </button>
+                    {dateSuccess && (
+                      <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-700/60">
+                        ✓ Date updated
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
               <span className="text-xs text-slate-400 print:text-slate-500 block">
                 Cashier / Staff: <strong>{invoice.soldBy}</strong>
               </span>

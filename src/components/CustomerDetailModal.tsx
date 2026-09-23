@@ -50,8 +50,10 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     inventory, 
     formatCurrency, 
     addManualPurchaseToCustomer, 
+    updateManualPurchase,
     deleteManualPurchase,
     deleteCustomerLedgerEntry,
+    updateCustomerLedgerEntry,
     setIsAddLedgerModalOpen,
     setSelectedCustomerForLedger,
     setLedgerInitialType,
@@ -77,13 +79,24 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const [showAddPurchaseForm, setShowAddPurchaseForm] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'debit' | 'credit' | 'overdue'>('all');
   
-  // Manual purchase form state
+  // Ledger Entry Edit Modal State
+  const [editingLedgerEntry, setEditingLedgerEntry] = useState<CustomerLedgerEntry | null>(null);
+  const [editLedgerDate, setEditLedgerDate] = useState('');
+  const [editLedgerDueDate, setEditLedgerDueDate] = useState('');
+  const [editLedgerDescription, setEditLedgerDescription] = useState('');
+  const [editLedgerNotes, setEditLedgerNotes] = useState('');
+  const [editLedgerAmount, setEditLedgerAmount] = useState('');
+  const [editLedgerPaymentMethod, setEditLedgerPaymentMethod] = useState('');
+
+  // Manual purchase form & edit state
   const [manualTitle, setManualTitle] = useState('');
   const [manualCategory, setManualCategory] = useState<'Phone' | 'Accessory' | 'Repair / Screen' | 'Audio / Buds' | 'Other'>('Accessory');
   const [manualAmount, setManualAmount] = useState('');
   const [manualImei, setManualImei] = useState('');
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
   const [manualNotes, setManualNotes] = useState('');
+  const [editingManualPurchaseId, setEditingManualPurchaseId] = useState<string | null>(null);
+  const [editManualPurchaseDate, setEditManualPurchaseDate] = useState('');
 
   if (!customer) return null;
 
@@ -144,6 +157,39 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     setManualImei('');
     setManualNotes('');
     setShowAddPurchaseForm(false);
+  };
+
+  const startEditLedgerEntry = (entry: CustomerLedgerEntry) => {
+    setEditingLedgerEntry(entry);
+    setEditLedgerDate(entry.date ? entry.date.split('T')[0] : '');
+    setEditLedgerDueDate(entry.dueDate ? entry.dueDate.split('T')[0] : '');
+    setEditLedgerDescription(entry.description || '');
+    setEditLedgerNotes(entry.notes || '');
+    setEditLedgerAmount(entry.amount.toString());
+    setEditLedgerPaymentMethod(entry.paymentMethod || 'Cash');
+  };
+
+  const handleSaveLedgerEntry = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLedgerEntry) return;
+    const numAmount = parseFloat(editLedgerAmount);
+    updateCustomerLedgerEntry(customer.id, editingLedgerEntry.id, {
+      date: editLedgerDate ? new Date(editLedgerDate).toISOString() : editingLedgerEntry.date,
+      dueDate: editLedgerDueDate ? new Date(editLedgerDueDate).toISOString() : undefined,
+      description: editLedgerDescription.trim() || editingLedgerEntry.description,
+      notes: editLedgerNotes.trim() || undefined,
+      amount: !isNaN(numAmount) && numAmount > 0 ? numAmount : editingLedgerEntry.amount,
+      paymentMethod: editLedgerPaymentMethod as any,
+    });
+    setEditingLedgerEntry(null);
+  };
+
+  const handleSaveManualPurchaseDate = (purchaseId: string) => {
+    if (!editManualPurchaseDate) return;
+    updateManualPurchase(customer.id, purchaseId, {
+      date: new Date(editManualPurchaseDate).toISOString(),
+    });
+    setEditingManualPurchaseId(null);
   };
 
   const handleStartSaleForMatch = (device: MobileItem) => {
@@ -599,7 +645,17 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                           return (
                             <tr key={entry.id} className="hover:bg-slate-50/80 transition-colors">
                               <td className="p-3 font-medium text-slate-600 whitespace-nowrap">
-                                <div className="font-semibold text-slate-900">{new Date(entry.date).toLocaleDateString()}</div>
+                                <div className="flex items-center gap-1.5">
+                                  <div className="font-semibold text-slate-900">{new Date(entry.date).toLocaleDateString()}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditLedgerEntry(entry)}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                    title="Edit saved date or transaction details"
+                                  >
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
+                                </div>
                                 <div className="text-[10px] text-slate-400 font-mono">{entry.id}</div>
                               </td>
                               <td className="p-3 whitespace-nowrap">
@@ -649,18 +705,28 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                                 )}
                               </td>
                               <td className="p-3 text-center whitespace-nowrap">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm('Delete this ledger transaction?')) {
-                                      deleteCustomerLedgerEntry(customer.id, entry.id);
-                                    }
-                                  }}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                  title="Delete transaction"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditLedgerEntry(entry)}
+                                    className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    title="Edit date & transaction details"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm('Delete this ledger transaction?')) {
+                                        deleteCustomerLedgerEntry(customer.id, entry.id);
+                                      }
+                                    }}
+                                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    title="Delete transaction"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -960,9 +1026,47 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                               {item.category}
                             </span>
                           </div>
-                          <div className="text-[11px] text-slate-500">
-                            {new Date(item.date).toLocaleDateString()} {item.notes && `• ${item.notes}`}
-                          </div>
+                          {editingManualPurchaseId === item.id ? (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <input
+                                type="date"
+                                value={editManualPurchaseDate}
+                                onChange={(e) => setEditManualPurchaseDate(e.target.value)}
+                                className="px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-800"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSaveManualPurchaseDate(item.id)}
+                                className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer"
+                              >
+                                Save Date
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingManualPurchaseId(null)}
+                                className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[11px] cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                              <span>{new Date(item.date).toLocaleDateString()}</span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditManualPurchaseDate(item.date ? item.date.split('T')[0] : '');
+                                  setEditingManualPurchaseId(item.id);
+                                }}
+                                className="text-indigo-600 hover:underline inline-flex items-center gap-0.5 text-[10px] cursor-pointer font-medium"
+                                title="Edit saved purchase date"
+                              >
+                                <Edit3 className="w-2.5 h-2.5" />
+                                <span>Edit Date</span>
+                              </button>
+                              {item.notes && <span>• {item.notes}</span>}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-xs font-bold text-slate-900">{formatCurrency(item.amount)}</div>
@@ -1157,6 +1261,160 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Edit Ledger Entry Modal */}
+        {editingLedgerEntry && (
+          <div className="fixed inset-0 z-60 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
+              <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-sm flex items-center gap-1.5">
+                    <Calendar className="w-4 h-4 text-indigo-400" />
+                    <span>Edit Khata Entry & Save Date</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">ID: {editingLedgerEntry.id}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingLedgerEntry(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveLedgerEntry} className="p-5 space-y-4">
+                {/* Transaction Date with Quick Today */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">Transaction Date *</label>
+                    <button
+                      type="button"
+                      onClick={() => setEditLedgerDate(new Date().toISOString().split('T')[0])}
+                      className="text-[11px] text-indigo-600 hover:text-indigo-700 font-semibold cursor-pointer"
+                    >
+                      Set Today
+                    </button>
+                  </div>
+                  <input
+                    type="date"
+                    required
+                    value={editLedgerDate}
+                    onChange={(e) => setEditLedgerDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                  />
+                </div>
+
+                {/* Due Date if applicable */}
+                {editingLedgerEntry.type === 'debit' && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-xs font-bold text-slate-700">Payment Due Date (Optional)</label>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const d = new Date();
+                            d.setDate(d.getDate() + 15);
+                            setEditLedgerDueDate(d.toISOString().split('T')[0]);
+                          }}
+                          className="text-indigo-600 hover:underline cursor-pointer"
+                        >
+                          +15 Days
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditLedgerDueDate('')}
+                          className="text-slate-400 hover:text-rose-500 cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="date"
+                      value={editLedgerDueDate}
+                      onChange={(e) => setEditLedgerDueDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-medium focus:bg-white focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* Amount */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Amount ({settings.currencySymbol || 'Rs'}) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    step="any"
+                    value={editLedgerAmount}
+                    onChange={(e) => setEditLedgerAmount(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                  />
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Description / Item *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editLedgerDescription}
+                    onChange={(e) => setEditLedgerDescription(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                  />
+                </div>
+
+                {/* Payment Method */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Payment Channel</label>
+                  <select
+                    value={editLedgerPaymentMethod}
+                    onChange={(e) => setEditLedgerPaymentMethod(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="JazzCash / EasyPaisa">JazzCash / EasyPaisa</option>
+                    <option value="Debit/Credit Card">Debit/Credit Card</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Internal Notes (Optional)</label>
+                  <input
+                    type="text"
+                    value={editLedgerNotes}
+                    onChange={(e) => setEditLedgerNotes(e.target.value)}
+                    placeholder="e.g. Promised by Monday, partial adjustment"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div className="pt-2 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingLedgerEntry(null)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>
