@@ -1,0 +1,73 @@
+{
+  "entities": {
+    "MobileItem": {
+      "title": "MobileItem",
+      "description": "Mobile phone inventory item with specs, IMEI, and status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "brand": { "type": "string" },
+        "model": { "type": "string" },
+        "imei1": { "type": "string" },
+        "status": { "type": "string" },
+        "sellingPriceTarget": { "type": "number" },
+        "purchaseCost": { "type": "number" },
+        "deviceType": { "type": "string" }
+      },
+      "required": ["id", "brand", "model", "imei1", "status"]
+    },
+    "SaleRecord": {
+      "title": "SaleRecord",
+      "description": "Sale invoice transaction record",
+      "type": "object",
+      "properties": {
+        "saleId": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "deviceId": { "type": "string" },
+        "finalAmount": { "type": "number" },
+        "saleDate": { "type": "string" }
+      },
+      "required": ["saleId", "invoiceNumber", "deviceId", "finalAmount", "saleDate"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer contact and khata record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "name", "phone"]
+    },
+    "StoreState": {
+      "title": "StoreState",
+      "description": "Unified store synchronization document across mobile phones and desktop systems",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["updatedAt"]
+    }
+  },
+  "firestore": {
+    "/inventory/{itemId}": {
+      "schema": "MobileItem",
+      "description": "Inventory device items"
+    },
+    "/sales/{saleId}": {
+      "schema": "SaleRecord",
+      "description": "Completed sales invoices"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer directory records"
+    },
+    "/store_state/{docId}": {
+      "schema": "StoreState",
+      "description": "Unified synchronized store state across phone and PC"
+    }
+  }
+}

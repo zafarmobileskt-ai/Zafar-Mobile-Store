@@ -57,6 +57,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const [manualInput, setManualInput] = useState('');
   const [detectedCandidates, setDetectedCandidates] = useState<DetectedBarcodeCandidate[]>([]);
   const [fileScanning, setFileScanning] = useState(false);
+  const [useHtml5Fallback, setUseHtml5Fallback] = useState(false);
 
   // Refs
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -68,6 +69,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   const hasProcessedScanRef = useRef<boolean>(false);
 
   const containerId = 'html5-qrcode-scanner-region';
+
+  // Ensure HTML Element container is always in the DOM before Html5Qrcode initializes
+  const ensureContainerExists = useCallback(() => {
+    let el = document.getElementById(containerId);
+    if (!el) {
+      const parent = document.getElementById('camera-viewport-container') || document.body;
+      if (parent) {
+        el = document.createElement('div');
+        el.id = containerId;
+        el.className = 'w-full h-full absolute inset-0';
+        parent.appendChild(el);
+      }
+    }
+    return el;
+  }, [containerId]);
 
   // Check if native BarcodeDetector is available
   const hasNativeBarcodeDetector = typeof window !== 'undefined' && 'BarcodeDetector' in window;
@@ -174,13 +190,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
 
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop();
-        } catch (e) {
-          console.error(e);
-        }
-      });
+      try {
+        streamRef.current.getTracks().forEach((track) => {
+          try {
+            if (track && track.readyState === 'live') {
+              track.stop();
+            }
+          } catch {
+            // Safe ignore
+          }
+        });
+      } catch {
+        // Safe ignore
+      }
       streamRef.current = null;
     }
 
@@ -202,6 +224,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
     setIsScanning(false);
     setTorchOn(false);
+    setHasTorch(false);
+    setZoomSupported(false);
+    setZoomLevel(1);
   }, []);
 
   // Final submit handler
@@ -225,7 +250,32 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
   // Fallback Html5Qrcode software scanner
   const startHtml5QrcodeFallback = useCallback(async () => {
     try {
+      setUseHtml5Fallback(true);
       stopLiveStreams();
+
+      const el = ensureContainerExists();
+      if (!el) {
+        // Retry shortly if modal DOM is still animating/mounting
+        setTimeout(() => {
+          if (isComponentMounted.current) {
+            startHtml5QrcodeFallback();
+          }
+        }, 100);
+        return;
+      }
+
+      // Clear any existing scanner instance safely
+      if (html5QrCodeRef.current) {
+        try {
+          if (html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop();
+          }
+          html5QrCodeRef.current.clear();
+        } catch {
+          // ignore
+        }
+        html5QrCodeRef.current = null;
+      }
 
       const html5QrCode = new Html5Qrcode(containerId, {
         formatsToSupport: [
@@ -244,21 +294,34 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       });
       html5QrCodeRef.current = html5QrCode;
 
-      const availableCams = await Html5Qrcode.getCameras();
+      const availableCams = await Html5Qrcode.getCameras().catch(() => []);
+      const scanConfig = {
+        fps: 20,
+        qrbox: (w: number, h: number) => {
+          const minSize = Math.min(w, h);
+          return { width: Math.floor(minSize * 0.9), height: Math.floor(minSize * 0.55) };
+        },
+        aspectRatio: 1.333
+      };
+
       if (availableCams && availableCams.length > 0) {
         setCameras(availableCams);
         const camId = availableCams[selectedCameraIndex]?.id || availableCams[0].id;
 
         await html5QrCode.start(
           camId,
-          {
-            fps: 20,
-            qrbox: (w, h) => {
-              const minSize = Math.min(w, h);
-              return { width: Math.floor(minSize * 0.9), height: Math.floor(minSize * 0.55) };
-            },
-            aspectRatio: 1.333
+          scanConfig,
+          (decodedText) => {
+            handleFinalScan(decodedText);
           },
+          () => {}
+        );
+        setIsScanning(true);
+      } else {
+        // Fallback to facingMode if camera list is empty
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          scanConfig,
           (decodedText) => {
             handleFinalScan(decodedText);
           },
@@ -267,10 +330,15 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
         setIsScanning(true);
       }
     } catch (err: any) {
-      console.error('Html5Qrcode fallback error:', err);
-      setErrorMessage(err.message || 'Unable to start camera. Please verify camera permissions.');
+      console.warn('Html5Qrcode fallback notice:', err);
+      setIsScanning(false);
+      setErrorMessage(
+        err?.message?.includes('NotAllowedError') || err?.message?.includes('Permission')
+          ? 'Camera permission was denied. Please allow camera permissions in your browser or enter the IMEI manually.'
+          : 'Unable to start camera scanner. You can upload a photo of the barcode or enter IMEI manually below.'
+      );
     }
-  }, [handleFinalScan, selectedCameraIndex, stopLiveStreams]);
+  }, [containerId, ensureContainerExists, handleFinalScan, selectedCameraIndex, stopLiveStreams]);
 
   // Native Barcode Detector Loop (60 FPS hardware accelerated)
   const startNativeBarcodeScanner = useCallback(async (_stream: MediaStream) => {
@@ -337,11 +405,12 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     setScannedResult(null);
     setDetectedCandidates([]);
     hasProcessedScanRef.current = false;
+    setUseHtml5Fallback(false);
 
     try {
       // 1. Enumerate video devices
       if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-        const devices = await navigator.mediaDevices.enumerateDevices();
+        const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
         const videoDevices = devices
           .filter((d) => d.kind === 'videoinput')
           .map((d, index) => ({
@@ -349,6 +418,13 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             label: d.label || `Camera ${index + 1}`
           }));
         setCameras(videoDevices);
+      }
+
+      // Check if getUserMedia is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('getUserMedia not supported, using Html5Qrcode fallback');
+        startHtml5QrcodeFallback();
+        return;
       }
 
       // 2. High performance direct getUserMedia
@@ -368,7 +444,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        await videoRef.current.play().catch(() => {});
       }
 
       setIsScanning(true);
@@ -400,7 +476,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
 
     } catch (err: any) {
-      console.warn('Direct getUserMedia failed, attempting Html5Qrcode fallback:', err);
+      console.warn('Direct getUserMedia notice, attempting Html5Qrcode fallback:', err);
       startHtml5QrcodeFallback();
     }
   }, [hasNativeBarcodeDetector, startHtml5QrcodeFallback, startNativeBarcodeScanner]);
@@ -421,10 +497,35 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        await videoRef.current.play().catch(() => {});
       }
       setIsScanning(true);
+
+      // Re-inspect track capabilities for the selected camera
+      const newTrack = stream.getVideoTracks()[0];
+      if (newTrack && newTrack.readyState === 'live') {
+        try {
+          const capabilities: any = newTrack.getCapabilities ? newTrack.getCapabilities() : {};
+          setHasTorch(!!capabilities.torch);
+          if (capabilities.zoom) {
+            setZoomSupported(true);
+            setMinZoom(capabilities.zoom.min || 1);
+            setMaxZoom(capabilities.zoom.max || 3);
+            setZoomLevel(capabilities.zoom.min || 1);
+          } else {
+            // Support digital zoom fallback
+            setZoomSupported(true);
+            setMinZoom(1);
+            setMaxZoom(3);
+            setZoomLevel(1);
+          }
+        } catch {
+          setZoomSupported(true);
+        }
+      }
+
       if (hasNativeBarcodeDetector) {
+        setUseHtml5Fallback(false);
         startNativeBarcodeScanner(stream);
       } else {
         startHtml5QrcodeFallback();
@@ -434,38 +535,48 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
     }
   }, [cameras, hasNativeBarcodeDetector, selectedCameraIndex, startHtml5QrcodeFallback, startLiveCamera, startNativeBarcodeScanner, stopLiveStreams]);
 
-  // Hardware Torch toggle
+  // Hardware Torch toggle with safe track state validation
   const toggleTorch = useCallback(async () => {
     if (streamRef.current && hasTorch) {
-      const track = streamRef.current.getVideoTracks()[0];
-      if (track) {
-        try {
+      try {
+        const track = streamRef.current.getVideoTracks()[0];
+        if (track && track.readyState === 'live') {
           const nextState = !torchOn;
           await (track as any).applyConstraints({
             advanced: [{ torch: nextState }]
+          }).catch((err: any) => {
+            console.warn('Torch constraint notice:', err?.message || err);
           });
           setTorchOn(nextState);
-        } catch (e) {
-          console.error('Torch toggle error:', e);
+        } else {
+          setHasTorch(false);
         }
+      } catch (e: any) {
+        console.warn('Torch toggle notice:', e?.message || e);
       }
     }
   }, [hasTorch, torchOn]);
 
-  // Hardware Zoom adjustment
+  // Zoom adjustment with hardware track constraint & smooth digital fallback
   const handleZoom = useCallback(async (targetZoom: number) => {
+    const clamped = Math.min(Math.max(targetZoom, minZoom), maxZoom);
+    setZoomLevel(clamped);
+
     if (streamRef.current && zoomSupported) {
-      const track = streamRef.current.getVideoTracks()[0];
-      if (track) {
-        try {
-          const clamped = Math.min(Math.max(targetZoom, minZoom), maxZoom);
+      try {
+        const track = streamRef.current.getVideoTracks()[0];
+        // Only apply constraints if track exists and is actively in 'live' state
+        if (track && track.readyState === 'live') {
           await (track as any).applyConstraints({
             advanced: [{ zoom: clamped }]
+          }).catch((err: any) => {
+            // Hardware constraint rejected or not supported on this track, digital zoom is already active
+            console.warn('Hardware zoom constraint not applied, digital zoom active:', err?.message || err);
           });
-          setZoomLevel(clamped);
-        } catch (e) {
-          console.error('Zoom error:', e);
         }
+      } catch (e: any) {
+        // Track state invalid or camera switching, digital zoom handles it cleanly
+        console.warn('Zoom adjustment notice:', e?.message || e);
       }
     }
   }, [maxZoom, minZoom, zoomSupported]);
@@ -503,9 +614,21 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
       }
 
       // 2. Fallback to Html5Qrcode file scan
+      let fileContainer = document.getElementById('file-scanner-temp');
+      if (!fileContainer) {
+        fileContainer = document.createElement('div');
+        fileContainer.id = 'file-scanner-temp';
+        fileContainer.style.display = 'none';
+        document.body.appendChild(fileContainer);
+      }
+
       const html5QrCode = new Html5Qrcode('file-scanner-temp', { verbose: false });
       const decodedResult = await html5QrCode.scanFile(file, true);
-      html5QrCode.clear();
+      try {
+        html5QrCode.clear();
+      } catch {
+        // ignore
+      }
 
       const candidates = extractAllCandidates(decodedResult);
       if (candidates.length > 1) {
@@ -676,7 +799,7 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
 
           {/* TAB 1: LIVE CAMERA SCANNER */}
           {activeTab === 'camera' && (
-            <div className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-4/3 flex items-center justify-center shadow-inner">
+            <div id="camera-viewport-container" className="relative rounded-2xl overflow-hidden bg-black border border-slate-800 aspect-4/3 flex items-center justify-center shadow-inner">
               
               {/* Native Video Stream Viewport */}
               <video
@@ -684,13 +807,19 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
                 playsInline
                 muted
                 autoPlay
-                className="w-full h-full object-cover"
+                style={{
+                  transform: zoomLevel > 1 ? `scale(${zoomLevel})` : undefined,
+                  transformOrigin: 'center center',
+                  transition: 'transform 0.2s ease-out'
+                }}
+                className={`w-full h-full object-cover ${useHtml5Fallback ? 'hidden' : 'block'}`}
               />
 
-              {/* Fallback Html5Qrcode container (if native detector not present) */}
-              {!hasNativeBarcodeDetector && (
-                <div id={containerId} className="w-full h-full absolute inset-0" />
-              )}
+              {/* Html5Qrcode Scanner Region - Always present in DOM */}
+              <div
+                id={containerId}
+                className={`w-full h-full absolute inset-0 ${useHtml5Fallback ? 'block z-10' : 'pointer-events-none'}`}
+              />
 
               {/* High-Precision Viewfinder Overlay */}
               {isScanning && !scannedResult && (
@@ -962,6 +1091,9 @@ export const BarcodeScannerModal: React.FC<BarcodeScannerModalProps> = ({
             Cancel
           </button>
         </div>
+
+        {/* Invisible permanent container for file scan fallback */}
+        <div id="file-scanner-temp" className="hidden" />
 
       </div>
     </div>

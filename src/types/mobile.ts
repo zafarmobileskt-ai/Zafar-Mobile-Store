@@ -71,6 +71,7 @@ export interface CustomerInfo {
   name: string;
   phone: string;
   cnicOrGovId?: string;
+  fatherName?: string;
   email?: string;
   address?: string;
 }
@@ -144,6 +145,7 @@ export interface CustomerLedgerSummary {
 export interface Customer {
   id: string;
   name: string;
+  fatherName?: string;
   phone: string;
   email?: string;
   cnicOrGovId?: string;
@@ -277,4 +279,12 @@ export interface DriveBackupFile {
   modifiedTime: string;
   size?: string;
   description?: string;
+}
+
+export interface AuthUser {
+  username: string;
+  name: string;
+  email?: string;
+  role: 'Owner' | 'Manager' | 'Staff';
+  avatarColor?: string;
 }

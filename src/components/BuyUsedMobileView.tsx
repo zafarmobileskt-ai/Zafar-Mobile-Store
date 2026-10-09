@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useShop } from '../context/ShopContext';
 import { 
   DeviceType,
@@ -22,18 +22,43 @@ import {
   Printer,
   FileText,
   Calendar,
-  RotateCcw
+  RotateCcw,
+  History,
+  Search,
+  ReceiptText,
+  ExternalLink,
+  Copy,
+  Check,
+  TrendingUp,
+  PlusCircle,
+  Layers,
+  ArrowUpRight,
+  ShoppingCart
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 export const BuyUsedMobileView: React.FC = () => {
   const { 
+    inventory,
+    sales,
+    formatCurrency,
     recordUsedIntake, 
     settings, 
     setActiveTab, 
     setSelectedDeviceForModal,
-    setSelectedPoliceCertDevice 
+    setSelectedPoliceCertDevice,
+    setIsPosModalOpen,
+    setSelectedDeviceForSale,
+    setSelectedInvoiceForModal,
+    customers,
+    setSelectedCustomerForModal
   } = useShop();
+
+  // Tab state: Intake Form vs Purchase History
+  const [activeSubTab, setActiveSubTab] = useState<'form' | 'history'>('form');
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'sold' | 'in_stock'>('all');
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [copiedImei, setCopiedImei] = useState<string | null>(null);
 
   // Scanner state
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -80,6 +105,100 @@ export const BuyUsedMobileView: React.FC = () => {
 
   const popularBrands = ['Apple', 'Samsung', 'Xiaomi', 'Vivo', 'Oppo', 'OnePlus', 'Realme', 'Infinix', 'Tecno', 'Other'];
   const popularStorages = ['64GB', '128GB', '256GB', '512GB', '1TB'];
+
+  const handleCopyImei = (imei: string) => {
+    navigator.clipboard.writeText(imei);
+    setCopiedImei(imei);
+    setTimeout(() => setCopiedImei(null), 2000);
+  };
+
+  // Helper to reliably find the matching SaleRecord for any item
+  const getSaleForItem = useCallback((item: MobileItem): SaleRecord | undefined => {
+    if (item.saleRecord) return item.saleRecord;
+    return sales.find((s) => (s.deviceId && s.deviceId === item.id) || (s.imei1 && item.imei1 && s.imei1 === item.imei1));
+  }, [sales]);
+
+  // Helper to determine if an item is sold
+  const isItemSold = useCallback((item: MobileItem): boolean => {
+    if (item.status === 'sold') return true;
+    if (item.saleRecord) return true;
+    return sales.some((s) => (s.deviceId && s.deviceId === item.id) || (s.imei1 && item.imei1 && s.imei1 === item.imei1));
+  }, [sales]);
+
+  // Comprehensive purchase and intake history containing all stock & sold devices
+  const purchasedHistory = useMemo(() => {
+    const list: MobileItem[] = [...inventory];
+    const inventoryImeis = new Set(inventory.map((i) => i.imei1));
+    const inventoryIds = new Set(inventory.map((i) => i.id));
+
+    // Also include any sales records from store history that don't match an active inventory device
+    sales.forEach((sale) => {
+      const hasItem = (sale.deviceId && inventoryIds.has(sale.deviceId)) || (sale.imei1 && inventoryImeis.has(sale.imei1));
+      if (!hasItem) {
+        list.push({
+          id: sale.deviceId || `MOB-${sale.saleId}`,
+          deviceType: sale.deviceType || 'used',
+          brand: sale.deviceTitle.split(' ')[0] || 'Mobile',
+          model: sale.deviceTitle,
+          color: 'Standard',
+          storage: 'N/A',
+          imei1: sale.imei1,
+          imei2: sale.imei2,
+          accessories: ['Device'],
+          networkStatus: 'PTA Approved',
+          purchaseCost: sale.purchaseCost || 0,
+          sellingPriceTarget: sale.soldPrice || 0,
+          minPrice: sale.soldPrice || 0,
+          purchaseDate: sale.saleDate,
+          supplierOrSeller: {
+            name: 'Original Intake / Trade-in',
+            phone: '',
+            type: 'Trade-in Exchange'
+          },
+          status: 'sold',
+          saleRecord: sale,
+          createdAt: sale.saleDate,
+          updatedAt: sale.saleDate,
+        });
+      }
+    });
+
+    return list.sort((a, b) => new Date(b.purchaseDate || b.createdAt).getTime() - new Date(a.purchaseDate || a.createdAt).getTime());
+  }, [inventory, sales]);
+
+  const soldCount = useMemo(() => purchasedHistory.filter((item) => isItemSold(item)).length, [purchasedHistory, isItemSold]);
+  const inStockCount = useMemo(() => purchasedHistory.filter((item) => !isItemSold(item)).length, [purchasedHistory, isItemSold]);
+  const totalPurchaseCost = useMemo(() => purchasedHistory.reduce((acc, curr) => acc + (curr.purchaseCost || 0), 0), [purchasedHistory]);
+  const totalRealizedProfit = useMemo(() => purchasedHistory.reduce((acc, curr) => {
+    const sale = getSaleForItem(curr);
+    return acc + (sale?.profit || 0);
+  }, 0), [purchasedHistory, getSaleForItem]);
+
+  const filteredHistory = useMemo(() => {
+    return purchasedHistory.filter((item) => {
+      const sold = isItemSold(item);
+      const sale = getSaleForItem(item);
+
+      if (historyStatusFilter === 'sold' && !sold) return false;
+      if (historyStatusFilter === 'in_stock' && sold) return false;
+
+      if (historySearchQuery.trim()) {
+        const q = historySearchQuery.toLowerCase().trim();
+        const matchesModel = `${item.brand} ${item.model}`.toLowerCase().includes(q);
+        const matchesImei = (item.imei1 || '').toLowerCase().includes(q) || (item.imei2?.toLowerCase().includes(q) ?? false);
+        const matchesSeller = (item.supplierOrSeller?.name || '').toLowerCase().includes(q) || 
+          (item.supplierOrSeller?.phone?.toLowerCase().includes(q) ?? false) || 
+          (item.supplierOrSeller?.cnicOrGovId?.toLowerCase().includes(q) ?? false);
+        const matchesBuyer = (sale?.customer?.name || '').toLowerCase().includes(q) || 
+          (sale?.customer?.phone?.toLowerCase().includes(q) ?? false) || 
+          (sale?.customer?.cnicOrGovId?.toLowerCase().includes(q) ?? false) || 
+          (sale?.customer?.fatherName?.toLowerCase().includes(q) ?? false) ||
+          (sale?.invoiceNumber?.toLowerCase().includes(q) ?? false);
+        return matchesModel || matchesImei || matchesSeller || matchesBuyer;
+      }
+      return true;
+    });
+  }, [purchasedHistory, historyStatusFilter, historySearchQuery, isItemSold, getSaleForItem]);
 
   const handleBrandSelect = (b: string) => {
     setBrand(b);
@@ -218,7 +337,7 @@ export const BuyUsedMobileView: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-5xl mx-auto space-y-5">
       
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-[#121520] via-[#161B2E] to-[#121520] text-white p-5 rounded-2xl shadow-xl border border-slate-800 flex items-center justify-between gap-4">
@@ -229,18 +348,55 @@ export const BuyUsedMobileView: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-600 text-white uppercase tracking-wider">
-                Quick Mobile Intake
+                Device Purchases & Intake
               </span>
-              <span className="text-xs text-indigo-300 font-mono">Diagnostics & Legal Form</span>
+              <span className="text-xs text-indigo-300 font-mono">Stock Intake, Seller Records & History</span>
             </div>
             <h2 className="text-xl font-black text-white mt-1">
-              Mobile Device Intake Station
+              Mobile Intake & Purchase History
             </h2>
             <p className="text-xs text-slate-300 mt-0.5">
-              Quickly enter phone name, IMEI, condition, and purchaser/seller details
+              Record new phone purchases from walk-in sellers or view full purchase history with sold items & customer data
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Primary Section Switcher Tabs */}
+      <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('form')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeSubTab === 'form'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/40'
+              : 'bg-[#12151E] text-slate-400 hover:text-slate-200 hover:bg-[#1A1F2C] border border-slate-800'
+          }`}
+        >
+          <PlusCircle className="w-4 h-4" />
+          <span>New Mobile Intake Form</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('history')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            activeSubTab === 'history'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-950/40'
+              : 'bg-[#12151E] text-slate-400 hover:text-slate-200 hover:bg-[#1A1F2C] border border-slate-800'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>Purchase & Intake History</span>
+          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-mono">
+            {purchasedHistory.length}
+          </span>
+          {soldCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700/60 font-semibold">
+              {soldCount} Sold
+            </span>
+          )}
+        </button>
       </div>
 
       {savedSuccess && recentlyAddedDevice && (
@@ -286,6 +442,14 @@ export const BuyUsedMobileView: React.FC = () => {
             </button>
             <button
               type="button"
+              onClick={() => setActiveSubTab('history')}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>View in Purchase History →</span>
+            </button>
+            <button
+              type="button"
               onClick={handleResetForm}
               className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium cursor-pointer ml-auto"
             >
@@ -296,6 +460,7 @@ export const BuyUsedMobileView: React.FC = () => {
       )}
 
       {/* Main Streamlined Intake Form */}
+      {activeSubTab === 'form' && (
       <form onSubmit={handleSubmit} className="bg-[#12151E] p-5 rounded-2xl border border-slate-800/90 shadow-sm space-y-4 text-xs text-slate-200">
         
         {/* 1. Used or New */}
@@ -744,6 +909,397 @@ export const BuyUsedMobileView: React.FC = () => {
         </div>
 
       </form>
+      )}
+
+      {/* ==================== TAB 2: PURCHASE & INTAKE HISTORY ==================== */}
+      {activeSubTab === 'history' && (
+        <div className="space-y-4">
+          
+          {/* Top Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800 shadow-sm">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Purchased Devices</span>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-xl font-black text-white">{purchasedHistory.length} Units</span>
+                <span className="text-xs text-slate-400 font-medium">Cost: {formatCurrency(totalPurchaseCost)}</span>
+              </div>
+            </div>
+
+            <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800 shadow-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Sold Intake Items</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-700/60 font-bold">
+                  With Full Sales Data
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-xl font-black text-indigo-400">{soldCount} Sold</span>
+                <span className="text-xs font-bold text-emerald-400">Profit: +{formatCurrency(totalRealizedProfit)}</span>
+              </div>
+            </div>
+
+            <div className="bg-[#12151E] p-4 rounded-xl border border-slate-800 shadow-sm">
+              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Active In-Stock Stock</span>
+              <div className="flex items-baseline justify-between mt-1">
+                <span className="text-xl font-black text-emerald-400">{inStockCount} In Stock</span>
+                <span className="text-xs text-slate-400 font-medium">Available to Sell</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Filter Bar & Search */}
+          <div className="bg-[#12151E] p-3.5 rounded-xl border border-slate-800 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            {/* Quick Status Filter Pills */}
+            <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto">
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  historyStatusFilter === 'all'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-[#171B26] text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                All Purchases ({purchasedHistory.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('sold')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  historyStatusFilter === 'sold'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-[#171B26] text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <ReceiptText className="w-3.5 h-3.5 text-indigo-300" />
+                <span>Sold Items ({soldCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setHistoryStatusFilter('in_stock')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+                  historyStatusFilter === 'in_stock'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-[#171B26] text-slate-400 hover:text-slate-200 border border-slate-800'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
+                <span>In Stock ({inStockCount})</span>
+              </button>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input
+                type="text"
+                placeholder="Search IMEI, model, seller or buyer..."
+                value={historySearchQuery}
+                onChange={(e) => setHistorySearchQuery(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-[#0D1017] border border-slate-700/80 rounded-lg text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+
+          {/* History Records Table / Cards */}
+          {filteredHistory.length === 0 ? (
+            <div className="bg-[#12151E] p-10 rounded-2xl border border-slate-800 text-center space-y-2">
+              <History className="w-8 h-8 text-slate-500 mx-auto" />
+              <h3 className="font-bold text-sm text-white">No purchase records found</h3>
+              <p className="text-xs text-slate-400">
+                {historySearchQuery ? 'Try adjusting your search query.' : 'No devices match the selected status filter.'}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredHistory.map((item) => {
+                const isSold = isItemSold(item);
+                const sale = getSaleForItem(item);
+
+                const linkedBuyer = sale?.customer
+                  ? customers.find((c) => 
+                      (c.id && sale.customer.id && c.id === sale.customer.id) ||
+                      (c.phone && sale.customer.phone && c.phone.replace(/\D/g, '') === sale.customer.phone.replace(/\D/g, '')) ||
+                      (c.name && sale.customer.name && c.name.toLowerCase() === sale.customer.name.toLowerCase())
+                    )
+                  : undefined;
+
+                const buyerName = sale?.customer?.name?.trim() || linkedBuyer?.name || (isSold ? 'Walk-in Customer' : '');
+                const buyerFatherName = sale?.customer?.fatherName || linkedBuyer?.fatherName;
+                const buyerPhone = sale?.customer?.phone || linkedBuyer?.phone;
+                const buyerCnic = sale?.customer?.cnicOrGovId || linkedBuyer?.cnicOrGovId;
+                const buyerAddress = sale?.customer?.address || linkedBuyer?.address;
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`p-4 rounded-xl border transition-all ${
+                      isSold 
+                        ? 'bg-[#12151F] border-indigo-900/50 hover:border-indigo-700/70 shadow-xs' 
+                        : 'bg-[#12151E] border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Top Device Header Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`p-2 rounded-xl shrink-0 ${
+                          item.deviceType === 'new'
+                            ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40'
+                            : 'bg-indigo-950/60 text-indigo-400 border border-indigo-800/40'
+                        }`}>
+                          <Smartphone className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span 
+                              onClick={() => setSelectedDeviceForModal(item)}
+                              className="font-bold text-sm text-white hover:text-blue-400 cursor-pointer"
+                            >
+                              {item.brand} {item.model}
+                            </span>
+                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase ${
+                              item.deviceType === 'new' 
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/50' 
+                                : 'bg-indigo-950 text-indigo-300 border border-indigo-700/50'
+                            }`}>
+                              {item.deviceType === 'new' ? 'BRAND NEW' : 'USED / INTAKE'}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isSold 
+                                ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60' 
+                                : 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                            }`}>
+                              {isSold ? 'SOLD OUT' : 'IN STOCK'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {item.storage && <span>{item.storage} • </span>}
+                            {item.color && <span>{item.color}</span>}
+                            {item.conditionGrade && <span> • {item.conditionGrade}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Primary Price Metric */}
+                      <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center">
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-400 block">Purchase Cost</span>
+                          <span className="font-extrabold text-sm text-white font-mono">{formatCurrency(item.purchaseCost)}</span>
+                        </div>
+                        {isSold && sale && (
+                          <div className="text-right sm:mt-0.5">
+                            <span className="text-[10px] text-emerald-400 font-bold block">
+                              Sold For: {formatCurrency(sale.finalAmount)}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Middle Details Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 my-3 text-xs">
+                      
+                      {/* IMEI & Identification */}
+                      <div className="bg-[#0B0E14] p-2.5 rounded-lg border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Device IMEI</span>
+                        <div className="flex items-center justify-between font-mono font-bold text-cyan-300">
+                          <span>{item.imei1}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyImei(item.imei1)}
+                            className="p-1 text-slate-500 hover:text-cyan-300 transition-colors cursor-pointer"
+                            title="Copy Primary IMEI"
+                          >
+                            {copiedImei === item.imei1 ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                          </button>
+                        </div>
+                        {item.imei2 && (
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            SIM 2: {item.imei2}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Purchase Intake Data (Seller / Supplier) */}
+                      <div className="bg-[#0B0E14] p-2.5 rounded-lg border border-slate-800 space-y-1">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Purchased From (Intake)</span>
+                        <div className="font-semibold text-slate-200 truncate">
+                          {item.supplierOrSeller?.name || 'Walk-in Seller'}
+                          {item.supplierOrSeller?.fatherName && (
+                            <span className="text-[10px] text-slate-400 font-normal ml-1">
+                              (S/O {item.supplierOrSeller.fatherName})
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                          <span>{item.supplierOrSeller?.phone || 'No phone'}</span>
+                          <span>{new Date(item.purchaseDate || item.createdAt).toLocaleDateString()}</span>
+                        </div>
+                        {item.supplierOrSeller?.cnicOrGovId && (
+                          <div className="text-[9px] text-slate-500 font-mono">
+                            CNIC: {item.supplierOrSeller.cnicOrGovId}
+                          </div>
+                        )}
+                        {item.supplierOrSeller?.address && (
+                          <div className="text-[9px] text-slate-500 truncate" title={item.supplierOrSeller.address}>
+                            {item.supplierOrSeller.address}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Current Sold Data OR In Stock Status */}
+                      {isSold ? (
+                        <div className="bg-[#101424] p-2.5 rounded-lg border border-indigo-800/60 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
+                              <ReceiptText className="w-3 h-3 text-indigo-400" />
+                              <span>Sold Item & Buyer Data</span>
+                            </span>
+                            {sale?.profit !== undefined && (
+                              <span className="text-[10px] text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/50">
+                                Profit: +{formatCurrency(sale.profit)}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (linkedBuyer) {
+                                  setSelectedCustomerForModal(linkedBuyer);
+                                } else if (sale) {
+                                  setSelectedInvoiceForModal(sale);
+                                }
+                              }}
+                              className="font-bold text-white hover:text-indigo-300 transition-colors cursor-pointer text-left truncate max-w-[180px]"
+                              title="View Customer CRM Profile"
+                            >
+                              Buyer: {buyerName}
+                            </button>
+                            {buyerFatherName && (
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                (S/O {buyerFatherName})
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-[10px] text-slate-300 space-y-0.5">
+                            {buyerPhone && (
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono text-slate-400">{buyerPhone}</span>
+                                {sale?.saleDate && (
+                                  <span className="text-slate-400">Sold: {new Date(sale.saleDate).toLocaleDateString()}</span>
+                                )}
+                              </div>
+                            )}
+
+                            {buyerCnic && (
+                              <div className="text-[9px] font-mono text-cyan-300">
+                                Buyer CNIC: {buyerCnic}
+                              </div>
+                            )}
+
+                            {buyerAddress && (
+                              <div className="text-[9px] text-slate-400 truncate" title={buyerAddress}>
+                                City/Addr: {buyerAddress}
+                              </div>
+                            )}
+                          </div>
+
+                          {sale && (
+                            <div className="text-[10px] font-mono text-indigo-300 flex items-center justify-between pt-1 border-t border-indigo-900/50">
+                              <span 
+                                onClick={() => setSelectedInvoiceForModal(sale)}
+                                className="hover:underline cursor-pointer font-bold text-indigo-400"
+                                title="Click to view full invoice"
+                              >
+                                {sale.invoiceNumber}
+                              </span>
+                              <span className="text-slate-400">{sale.paymentMethod}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="bg-[#0A1610] p-2.5 rounded-lg border border-emerald-900/50 space-y-1">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Stock Status</span>
+                          <div className="font-bold text-emerald-300 text-xs">
+                            Target Resale: {formatCurrency(item.sellingPriceTarget)}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Expected Margin: +{formatCurrency(item.sellingPriceTarget - item.purchaseCost)}
+                          </div>
+                          <div className="text-[10px] text-emerald-500 font-medium">
+                            Ready for POS checkout
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* Bottom Action Buttons */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-800/80">
+                      <span className="text-[11px] text-slate-500 italic truncate max-w-[200px] sm:max-w-md">
+                        {item.notes || (isSold ? `Sold via ${sale?.invoiceNumber || 'POS Checkout'}` : 'In active store inventory')}
+                      </span>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isSold && sale ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInvoiceForModal(sale)}
+                            className="px-2.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 rounded-lg text-xs font-semibold flex items-center gap-1 border border-indigo-500/40 transition-colors cursor-pointer shadow-xs"
+                            title="View official sale invoice bill with purchaser data"
+                          >
+                            <ReceiptText className="w-3.5 h-3.5" />
+                            <span>View Bill</span>
+                          </button>
+                        ) : !isSold ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedDeviceForSale(item);
+                              setIsPosModalOpen(true);
+                            }}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                            title="Sell this device in POS"
+                          >
+                            <ShoppingCart className="w-3.5 h-3.5" />
+                            <span>Sell Device</span>
+                          </button>
+                        ) : null}
+
+                        {item.policeProtection && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPoliceCertDevice(item)}
+                            className="p-1.5 bg-emerald-950/60 hover:bg-emerald-900 text-emerald-400 rounded-lg text-xs font-semibold border border-emerald-700/50 transition-colors cursor-pointer"
+                            title="Print Police Protection Certificate"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => setSelectedDeviceForModal(item)}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          Specs
+                        </button>
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+        </div>
+      )}
 
       {/* Barcode Scanner Modal */}
       <BarcodeScannerModal

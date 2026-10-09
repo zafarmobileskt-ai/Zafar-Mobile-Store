@@ -6,7 +6,8 @@ import {
   Smartphone, 
   Users, 
   TrendingUp, 
-  SlidersHorizontal 
+  SlidersHorizontal,
+  Sparkles
 } from 'lucide-react';
 
 export const MobileBottomNav: React.FC = () => {
@@ -15,7 +16,8 @@ export const MobileBottomNav: React.FC = () => {
     setActiveTab, 
     inventory, 
     sales, 
-    customers 
+    customers,
+    setIsVoiceAssistantOpen
   } = useShop();
 
   const inStockCount = inventory.filter((i) => i.status === 'in_stock').length;
@@ -103,6 +105,17 @@ export const MobileBottomNav: React.FC = () => {
           );
         })}
       </div>
+
+      {/* Floating Quick Voice Assistant Trigger for Mobile */}
+      <button
+        id="btn-mobile-floating-voice"
+        onClick={() => setIsVoiceAssistantOpen(true)}
+        aria-label="Open Gemini Live Voice Assistant"
+        className="fixed right-4 bottom-18 z-40 p-3 bg-gradient-to-tr from-purple-600 via-indigo-600 to-pink-500 hover:from-purple-500 hover:to-pink-400 text-white rounded-full shadow-2xl border border-purple-400/40 flex items-center justify-center cursor-pointer transition-transform active:scale-95 group"
+        title="Open Gemini 3.8 Live Voice Assistant"
+      >
+        <Sparkles className="w-5 h-5 text-white animate-pulse" />
+      </button>
     </aside>
   );
 };

@@ -22,14 +22,46 @@
   <body class="bg-[#0B0F17] text-slate-100 antialiased font-sans select-none">
     <div id="root"></div>
     <script>
+      // Purge any stale development module caches immediately
+      if ('caches' in window) {
+        caches.keys().then(function(keys) {
+          keys.forEach(function(key) {
+            if (key.includes('v5.1') || key.includes('v5.2')) {
+              caches.delete(key);
+            } else {
+              caches.open(key).then(function(cache) {
+                cache.keys().then(function(requests) {
+                  requests.forEach(function(req) {
+                    if (req.url.includes('/src/') || req.url.endsWith('.ts') || req.url.endsWith('.tsx')) {
+                      cache.delete(req);
+                    }
+                  });
+                });
+              });
+            }
+          });
+        });
+      }
+
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', function() {
           navigator.serviceWorker.register('/sw.js', { scope: '/' })
-            .then(function(reg) {
-              console.log('[PWA] ServiceWorker registered with scope:', reg.scope);
+            .then(function(registration) {
+              console.log('[PWA] Service Worker registered successfully with scope:', registration.scope);
+              registration.onupdatefound = function() {
+                var installingWorker = registration.installing;
+                if (installingWorker) {
+                  installingWorker.onstatechange = function() {
+                    if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                      console.log('[PWA] New version ready for offline caching.');
+                      window.dispatchEvent(new CustomEvent('pwa-update-available'));
+                    }
+                  };
+                }
+              };
             })
-            .catch(function(err) {
-              console.warn('[PWA] ServiceWorker registration failed:', err);
+            .catch(function(error) {
+              console.warn('[PWA] Service Worker registration note:', error);
             });
         });
       }

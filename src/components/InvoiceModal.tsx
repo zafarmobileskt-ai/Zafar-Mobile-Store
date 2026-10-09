@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useShop } from '../context/ShopContext';
 import { SaleRecord } from '../types/mobile';
 import { 
@@ -16,11 +16,20 @@ import {
   Calendar,
   RotateCcw,
   Check,
-  AlertCircle
+  AlertCircle,
+  User
 } from 'lucide-react';
 
 export const InvoiceModal: React.FC = () => {
-  const { selectedInvoiceForModal, setSelectedInvoiceForModal, settings, formatCurrency, updateSale } = useShop();
+  const { 
+    selectedInvoiceForModal, 
+    setSelectedInvoiceForModal, 
+    settings, 
+    formatCurrency, 
+    updateSale, 
+    customers,
+    updateCustomer
+  } = useShop();
 
   const [isEditingSaleDate, setIsEditingSaleDate] = useState(false);
   const [tempSaleDate, setTempSaleDate] = useState('');
@@ -29,9 +38,11 @@ export const InvoiceModal: React.FC = () => {
   // Full Entry Editing State
   const [isEditingFullEntry, setIsEditingFullEntry] = useState(false);
   const [editCustomerName, setEditCustomerName] = useState('');
+  const [editCustomerFatherName, setEditCustomerFatherName] = useState('');
   const [editCustomerPhone, setEditCustomerPhone] = useState('');
   const [editCustomerCnic, setEditCustomerCnic] = useState('');
   const [editCustomerAddress, setEditCustomerAddress] = useState('');
+  const [editCustomerEmail, setEditCustomerEmail] = useState('');
   const [editPaymentMethod, setEditPaymentMethod] = useState('');
   const [editSaleDate, setEditSaleDate] = useState('');
   const [editNotes, setEditNotes] = useState('');
@@ -40,6 +51,44 @@ export const InvoiceModal: React.FC = () => {
 
   if (!selectedInvoiceForModal) return null;
   const invoice: SaleRecord = selectedInvoiceForModal;
+
+  // Resolve linked customer from CRM directory if available
+  const linkedCustomer = useMemo(() => {
+    if (!invoice?.customer) return null;
+    const cleanPhone = invoice.customer.phone ? invoice.customer.phone.replace(/\D/g, '') : '';
+    const cleanName = (invoice.customer.name || '').trim().toLowerCase();
+    const cleanCnic = (invoice.customer.cnicOrGovId || '').trim().toLowerCase();
+
+    return customers.find((c) => {
+      if (invoice.customer.id && c.id === invoice.customer.id) return true;
+      if (cleanPhone && c.phone && c.phone.replace(/\D/g, '') === cleanPhone) return true;
+      if (cleanCnic && c.cnicOrGovId && c.cnicOrGovId.trim().toLowerCase() === cleanCnic) return true;
+      if (cleanName && c.name && c.name.trim().toLowerCase() === cleanName && (!cleanPhone || !c.phone)) return true;
+      return false;
+    });
+  }, [customers, invoice]);
+
+  // Robust Purchaser Data resolution merging invoice customer data & CRM record
+  const purchaser = useMemo(() => {
+    const rawName = invoice.customer?.name?.trim();
+    const name = rawName && rawName.toLowerCase() !== 'walk-in' ? rawName : (linkedCustomer?.name || 'Walk-in Cash Customer');
+    const fatherName = invoice.customer?.fatherName || linkedCustomer?.fatherName || '';
+    const phone = invoice.customer?.phone || linkedCustomer?.phone || '';
+    const cnicOrGovId = invoice.customer?.cnicOrGovId || linkedCustomer?.cnicOrGovId || '';
+    const address = invoice.customer?.address || linkedCustomer?.address || '';
+    const email = invoice.customer?.email || linkedCustomer?.email || '';
+    const id = invoice.customer?.id || linkedCustomer?.id || '';
+
+    return {
+      name,
+      fatherName,
+      phone,
+      cnicOrGovId,
+      address,
+      email,
+      id,
+    };
+  }, [invoice, linkedCustomer]);
 
   const handlePrint = () => {
     window.print();
@@ -55,10 +104,12 @@ export const InvoiceModal: React.FC = () => {
   };
 
   const startEditFullEntry = () => {
-    setEditCustomerName(invoice.customer.name || '');
-    setEditCustomerPhone(invoice.customer.phone || '');
-    setEditCustomerCnic(invoice.customer.cnicOrGovId || '');
-    setEditCustomerAddress(invoice.customer.address || '');
+    setEditCustomerName(purchaser.name !== 'Walk-in Cash Customer' ? purchaser.name : '');
+    setEditCustomerFatherName(purchaser.fatherName || '');
+    setEditCustomerPhone(purchaser.phone || '');
+    setEditCustomerCnic(purchaser.cnicOrGovId || '');
+    setEditCustomerAddress(purchaser.address || '');
+    setEditCustomerEmail(purchaser.email || '');
     setEditPaymentMethod(invoice.paymentMethod || 'Cash');
     setEditSaleDate(invoice.saleDate ? invoice.saleDate.split('T')[0] : new Date().toISOString().split('T')[0]);
     setEditNotes(invoice.notes || '');
@@ -68,9 +119,11 @@ export const InvoiceModal: React.FC = () => {
 
   const resetEditEntryForm = () => {
     setEditCustomerName('');
+    setEditCustomerFatherName('');
     setEditCustomerPhone('');
     setEditCustomerCnic('');
     setEditCustomerAddress('');
+    setEditCustomerEmail('');
     setEditPaymentMethod('Cash');
     setEditSaleDate(new Date().toISOString().split('T')[0]);
     setEditNotes('');
@@ -84,6 +137,16 @@ export const InvoiceModal: React.FC = () => {
     const finalAmount = numPrice - (invoice.discount || 0) - (invoice.tradeInItem?.agreedValue || 0);
     const profit = finalAmount - (invoice.purchaseCost || 0);
 
+    const updatedCustomerInfo = {
+      ...invoice.customer,
+      name: editCustomerName.trim() || purchaser.name,
+      fatherName: editCustomerFatherName.trim() || undefined,
+      phone: editCustomerPhone.trim() || purchaser.phone,
+      cnicOrGovId: editCustomerCnic.trim() || undefined,
+      address: editCustomerAddress.trim() || undefined,
+      email: editCustomerEmail.trim() || undefined,
+    };
+
     updateSale(invoice.saleId, {
       saleDate: newDateIso,
       paymentMethod: editPaymentMethod,
@@ -91,14 +154,20 @@ export const InvoiceModal: React.FC = () => {
       finalAmount,
       profit,
       notes: editNotes.trim() || undefined,
-      customer: {
-        ...invoice.customer,
-        name: editCustomerName.trim() || invoice.customer.name,
-        phone: editCustomerPhone.trim() || invoice.customer.phone,
-        cnicOrGovId: editCustomerCnic.trim() || undefined,
-        address: editCustomerAddress.trim() || undefined,
-      }
+      customer: updatedCustomerInfo,
     });
+
+    // If linked CRM customer profile exists, sync updated data to profile too
+    if (linkedCustomer) {
+      updateCustomer(linkedCustomer.id, {
+        name: updatedCustomerInfo.name,
+        fatherName: updatedCustomerInfo.fatherName,
+        phone: updatedCustomerInfo.phone,
+        cnicOrGovId: updatedCustomerInfo.cnicOrGovId,
+        address: updatedCustomerInfo.address,
+        email: updatedCustomerInfo.email,
+      });
+    }
 
     setIsEditingFullEntry(false);
     setFullSaveSuccess(true);
@@ -190,36 +259,74 @@ export const InvoiceModal: React.FC = () => {
 
               {/* Customer Name */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Customer Name *</label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Purchaser Full Name *</label>
                 <input
                   type="text"
                   value={editCustomerName}
                   onChange={(e) => setEditCustomerName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  placeholder="e.g. Muhammad Zafar"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400 font-semibold"
                   required
+                />
+              </div>
+
+              {/* Father Name (S/O) */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Father's Name (S/O)</label>
+                <input
+                  type="text"
+                  value={editCustomerFatherName}
+                  onChange={(e) => setEditCustomerFatherName(e.target.value)}
+                  placeholder="e.g. Abdul Rehman"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
                 />
               </div>
 
               {/* Customer Phone */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Customer Phone *</label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Purchaser Phone / WhatsApp *</label>
                 <input
                   type="text"
                   value={editCustomerPhone}
                   onChange={(e) => setEditCustomerPhone(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  placeholder="0300-1234567"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400 font-mono"
                   required
                 />
               </div>
 
               {/* Customer CNIC */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-300 block mb-1">CNIC / ID Card</label>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">CNIC / Govt ID Card #</label>
                 <input
                   type="text"
                   value={editCustomerCnic}
                   onChange={(e) => setEditCustomerCnic(e.target.value)}
                   placeholder="35202-xxxxxxx-x"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400 font-mono"
+                />
+              </div>
+
+              {/* Customer Address */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Purchaser Address / City</label>
+                <input
+                  type="text"
+                  value={editCustomerAddress}
+                  onChange={(e) => setEditCustomerAddress(e.target.value)}
+                  placeholder="e.g. Hall Road, Lahore"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                />
+              </div>
+
+              {/* Customer Email */}
+              <div>
+                <label className="text-[11px] font-semibold text-slate-300 block mb-1">Email Address (Optional)</label>
+                <input
+                  type="email"
+                  value={editCustomerEmail}
+                  onChange={(e) => setEditCustomerEmail(e.target.value)}
+                  placeholder="customer@example.com"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
                 />
               </div>
@@ -239,19 +346,20 @@ export const InvoiceModal: React.FC = () => {
                   <option value="Debit / Credit Card">Debit / Credit Card</option>
                   <option value="Partial / Split">Partial / Split</option>
                   <option value="Full Credit (Khata)">Full Credit (Khata)</option>
+                  <option value="Trade-In Balance">Trade-In Balance</option>
                 </select>
               </div>
 
               {/* Selling Price */}
               <div>
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
-                  Sold Price ({settings.currencySymbol || '$'})
+                  Sold Price ({settings.currencySymbol || 'PKR '})
                 </label>
                 <input
                   type="number"
                   value={editSoldPrice}
                   onChange={(e) => setEditSoldPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-white text-xs outline-none focus:border-amber-400 font-bold"
                   required
                 />
               </div>
@@ -406,18 +514,64 @@ export const InvoiceModal: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             
             {/* Customer Box */}
-            <div className="bg-[#171B26] border border-slate-700/60 print:bg-slate-50 print:border-slate-200 rounded-xl p-3.5">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-500 block mb-1.5">
-                Billed To (Customer Details)
-              </span>
-              <span className="font-bold text-sm text-white print:text-slate-900 block">{invoice.customer.name}</span>
-              <div className="text-slate-300 print:text-slate-600 space-y-0.5 mt-1 text-xs">
-                <div>Phone: <strong className="text-white print:text-slate-900">{invoice.customer.phone}</strong></div>
-                {invoice.customer.cnicOrGovId && (
-                  <div>Govt ID / CNIC: <strong className="font-mono text-cyan-300 print:text-slate-900">{invoice.customer.cnicOrGovId}</strong></div>
+            <div className="bg-[#171B26] border border-slate-700/60 print:bg-slate-50 print:border-slate-300 rounded-xl p-3.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 print:text-slate-600 flex items-center gap-1">
+                  <User className="w-3 h-3 text-indigo-400 print:text-indigo-700" />
+                  <span>Billed To (Purchaser Details)</span>
+                </span>
+                {purchaser.id && (
+                  <span className="text-[9px] font-mono text-slate-400 print:text-slate-600 bg-slate-900 print:bg-slate-200 px-1.5 py-0.2 rounded">
+                    ID: {purchaser.id}
+                  </span>
                 )}
-                {invoice.customer.address && (
-                  <div>Address: {invoice.customer.address}</div>
+              </div>
+
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="font-bold text-sm sm:text-base text-white print:text-slate-950 block">
+                  {purchaser.name}
+                </span>
+                {purchaser.fatherName && (
+                  <span className="text-xs text-slate-300 print:text-slate-700 font-medium">
+                    (S/O {purchaser.fatherName})
+                  </span>
+                )}
+              </div>
+
+              <div className="text-slate-300 print:text-slate-700 space-y-1 text-xs pt-0.5">
+                {purchaser.phone && (
+                  <div className="flex items-center gap-1.5">
+                    <Phone className="w-3 h-3 text-slate-500 print:text-slate-400 shrink-0" />
+                    <span>Phone:</span>
+                    <strong className="text-white print:text-slate-950 font-mono">{purchaser.phone}</strong>
+                  </div>
+                )}
+
+                {purchaser.cnicOrGovId ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold text-slate-400 print:text-slate-600">Govt ID / CNIC:</span>
+                    <strong className="font-mono text-cyan-300 print:text-slate-950 bg-slate-900/80 print:bg-slate-200/80 px-1.5 py-0.5 rounded text-[11px] font-bold">
+                      {purchaser.cnicOrGovId}
+                    </strong>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-amber-400/80 print:text-amber-700 italic">
+                    CNIC / ID not recorded
+                  </div>
+                )}
+
+                {purchaser.address && (
+                  <div className="flex items-start gap-1.5">
+                    <MapPin className="w-3 h-3 text-slate-500 print:text-slate-400 shrink-0 mt-0.5" />
+                    <span>Address: {purchaser.address}</span>
+                  </div>
+                )}
+
+                {purchaser.email && (
+                  <div className="flex items-center gap-1.5">
+                    <Mail className="w-3 h-3 text-slate-500 print:text-slate-400 shrink-0" />
+                    <span>Email: {purchaser.email}</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -553,12 +707,18 @@ export const InvoiceModal: React.FC = () => {
           </div>
 
           {/* Signatures */}
-          <div className="pt-8 flex justify-between items-end text-center text-xs text-slate-400 print:text-slate-600">
-            <div className="w-40 border-t border-slate-700 print:border-slate-400 pt-1">
-              <span className="block font-medium">Customer Signature</span>
+          <div className="pt-8 flex justify-between items-end text-center text-xs text-slate-400 print:text-slate-700 gap-4">
+            <div className="w-52 border-t border-slate-700 print:border-slate-500 pt-1.5">
+              <span className="block font-bold text-slate-300 print:text-slate-900 text-xs">Purchaser Signature & Thumb</span>
+              <span className="block text-[10px] text-slate-400 print:text-slate-600 font-mono mt-0.5 truncate">
+                {purchaser.name} {purchaser.cnicOrGovId ? `(${purchaser.cnicOrGovId})` : ''}
+              </span>
             </div>
-            <div className="w-40 border-t border-slate-700 print:border-slate-400 pt-1">
-              <span className="block font-medium">Authorized Shop Stamp</span>
+            <div className="w-52 border-t border-slate-700 print:border-slate-500 pt-1.5">
+              <span className="block font-bold text-slate-300 print:text-slate-900 text-xs">Authorized Stamp & Sign</span>
+              <span className="block text-[10px] text-slate-400 print:text-slate-600 font-medium mt-0.5">
+                {settings.shopName}
+              </span>
             </div>
           </div>
 

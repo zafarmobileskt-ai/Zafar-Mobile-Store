@@ -34,7 +34,8 @@ export const InvoicesView: React.FC = () => {
     exportSalesToSheets,
     getCustomerByPhone,
     setSelectedCustomerForModal,
-    updateSale
+    updateSale,
+    customers
   } = useShop();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -63,30 +64,39 @@ export const InvoicesView: React.FC = () => {
       // Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
+        const custName = (sale.customer?.name || '').toLowerCase();
+        const custPhone = (sale.customer?.phone || '').toLowerCase();
+        const custCnic = (sale.customer?.cnicOrGovId || '').toLowerCase();
+        const custFather = (sale.customer?.fatherName || '').toLowerCase();
+        const custAddress = (sale.customer?.address || '').toLowerCase();
+        const imei1 = (sale.imei1 || '').toLowerCase();
+        const imei2 = (sale.imei2 || '').toLowerCase();
+        const invoiceNum = (sale.invoiceNumber || '').toLowerCase();
+        const devTitle = (sale.deviceTitle || '').toLowerCase();
 
         if (searchField === 'customer') {
-          return sale.customer.name.toLowerCase().includes(q) || (sale.customer.cnicOrGovId?.toLowerCase().includes(q) ?? false);
+          return custName.includes(q) || custCnic.includes(q) || custFather.includes(q) || custAddress.includes(q);
         }
 
         if (searchField === 'imei') {
-          return sale.imei1.toLowerCase().includes(q) || (sale.imei2 && sale.imei2.toLowerCase().includes(q));
+          return imei1.includes(q) || imei2.includes(q);
         }
 
         if (searchField === 'invoice') {
-          return sale.invoiceNumber.toLowerCase().includes(q);
+          return invoiceNum.includes(q);
         }
 
         if (searchField === 'phone') {
-          return sale.customer.phone.toLowerCase().includes(q);
+          return custPhone.includes(q);
         }
 
         // 'all' search
-        const matchInvoice = sale.invoiceNumber.toLowerCase().includes(q);
-        const matchTitle = sale.deviceTitle.toLowerCase().includes(q);
-        const matchCustomer = sale.customer.name.toLowerCase().includes(q);
-        const matchPhone = sale.customer.phone.toLowerCase().includes(q);
-        const matchImei = sale.imei1.toLowerCase().includes(q) || (sale.imei2 && sale.imei2.toLowerCase().includes(q));
-        const matchCnic = sale.customer.cnicOrGovId?.toLowerCase().includes(q);
+        const matchInvoice = invoiceNum.includes(q);
+        const matchTitle = devTitle.includes(q);
+        const matchCustomer = custName.includes(q) || custFather.includes(q) || custAddress.includes(q);
+        const matchPhone = custPhone.includes(q);
+        const matchImei = imei1.includes(q) || imei2.includes(q);
+        const matchCnic = custCnic.includes(q);
         if (!matchInvoice && !matchTitle && !matchCustomer && !matchPhone && !matchImei && !matchCnic) {
           return false;
         }
@@ -363,23 +373,61 @@ export const InvoicesView: React.FC = () => {
 
                       {/* Customer Details */}
                       <td className="py-3.5 px-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const cust = getCustomerByPhone(sale.customer.phone);
-                            if (cust) {
-                              setSelectedCustomerForModal(cust);
-                            }
-                          }}
-                          className="font-semibold text-white hover:text-indigo-400 text-left transition-colors cursor-pointer block"
-                          title="View Customer CRM Profile & Past Purchases"
-                        >
-                          {sale.customer.name}
-                        </button>
-                        <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
-                          <Phone className="w-2.5 h-2.5" />
-                          <span>{sale.customer.phone}</span>
-                        </div>
+                        {(() => {
+                          const linkedCust = (sale.customer?.phone ? getCustomerByPhone(sale.customer.phone) : undefined) ||
+                            customers.find((c) => (c.name && sale.customer?.name && c.name.toLowerCase() === sale.customer.name.toLowerCase()));
+                          const purchaserName = sale.customer?.name?.trim() || linkedCust?.name || 'Walk-in Customer';
+                          const purchaserFatherName = sale.customer?.fatherName || linkedCust?.fatherName;
+                          const purchaserPhone = sale.customer?.phone || linkedCust?.phone;
+                          const purchaserCnic = sale.customer?.cnicOrGovId || linkedCust?.cnicOrGovId;
+                          const purchaserAddress = sale.customer?.address || linkedCust?.address;
+
+                          return (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (linkedCust) {
+                                      setSelectedCustomerForModal(linkedCust);
+                                    } else {
+                                      setSelectedInvoiceForModal(sale);
+                                    }
+                                  }}
+                                  className="font-semibold text-white hover:text-indigo-400 text-left transition-colors cursor-pointer block"
+                                  title="View Customer CRM Profile & Past Purchases"
+                                >
+                                  {purchaserName}
+                                </button>
+                                {purchaserFatherName && (
+                                  <span className="text-[10px] text-slate-400 font-normal">
+                                    (S/O {purchaserFatherName})
+                                  </span>
+                                )}
+                              </div>
+
+                              {purchaserPhone && (
+                                <div className="text-[11px] text-slate-400 font-mono flex items-center gap-1">
+                                  <Phone className="w-2.5 h-2.5 text-slate-500" />
+                                  <span>{purchaserPhone}</span>
+                                </div>
+                              )}
+
+                              {purchaserCnic && (
+                                <div className="text-[10px] font-mono text-cyan-300 flex items-center gap-1">
+                                  <span className="text-slate-500 text-[9px]">CNIC:</span>
+                                  <span>{purchaserCnic}</span>
+                                </div>
+                              )}
+
+                              {purchaserAddress && (
+                                <div className="text-[10px] text-slate-500 truncate max-w-[170px]" title={purchaserAddress}>
+                                  {purchaserAddress}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Warranty Status */}

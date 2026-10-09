@@ -3,6 +3,7 @@
   "appId": "1:335057417102:web:6732da0b17952e7ef72adf",
   "apiKey": "AIzaSyBx0u1d3DYwzFDH7Q9mcuxC-elTTCFuvGE",
   "authDomain": "gen-lang-client-0653075856.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-zafarmobilestore-e42611d6-5e03-4609-bc31-34a0c7107695",
   "storageBucket": "gen-lang-client-0653075856.firebasestorage.app",
   "messagingSenderId": "335057417102",
   "measurementId": "",

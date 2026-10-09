@@ -67,7 +67,7 @@ export function computeCustomerLedger(customer: Customer): CustomerLedgerSummary
  */
 export function formatLedgerStatus(
   summary: CustomerLedgerSummary,
-  currencySymbol = '$'
+  currencySymbol = 'PKR '
 ) {
   if (summary.balanceType === 'receivable') {
     return {
@@ -94,7 +94,7 @@ export function formatLedgerStatus(
   }
 
   return {
-    statusText: 'Settled ($0.00)',
+    statusText: 'Settled (PKR 0)',
     subText: 'Zero pending balance',
     shortBadge: 'Settled',
     colorClass: 'text-emerald-400',
@@ -111,7 +111,7 @@ export function generateWhatsAppDebtReminder(
   customer: Customer,
   summary: CustomerLedgerSummary,
   shopName: string,
-  currencySymbol = '$'
+  currencySymbol = 'PKR '
 ) {
   const cleanPhone = (customer.phone || '').replace(/\D/g, '');
   const amountStr = `${currencySymbol}${summary.pendingReceivable.toLocaleString()}`;

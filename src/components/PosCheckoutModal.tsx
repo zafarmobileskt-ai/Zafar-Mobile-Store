@@ -36,7 +36,9 @@ export const PosCheckoutModal: React.FC = () => {
     setSelectedInvoiceForModal,
     formatCurrency,
     settings,
-    customers
+    customers,
+    selectedCustomerForSale,
+    setSelectedCustomerForSale
   } = useShop();
 
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -60,6 +62,7 @@ export const PosCheckoutModal: React.FC = () => {
 
   // Customer details
   const [customerName, setCustomerName] = useState('');
+  const [customerFatherName, setCustomerFatherName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerCnic, setCustomerCnic] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
@@ -84,6 +87,7 @@ export const PosCheckoutModal: React.FC = () => {
   // Helper to reset customer & sale form to clean state (avoids carrying over old data)
   const resetSaleForm = () => {
     setCustomerName('');
+    setCustomerFatherName('');
     setCustomerPhone('');
     setCustomerCnic('');
     setCustomerEmail('');
@@ -122,7 +126,15 @@ export const PosCheckoutModal: React.FC = () => {
       setAmountPaidNow(first.sellingPriceTarget);
       setWarrantyDays(first.deviceType === 'new' ? settings.defaultWarrantyDaysNew : settings.defaultWarrantyDaysUsed);
     }
-  }, [selectedDeviceForSale, isPosModalOpen]);
+    if (selectedCustomerForSale) {
+      setCustomerName(selectedCustomerForSale.name || '');
+      setCustomerFatherName(selectedCustomerForSale.fatherName || '');
+      setCustomerPhone(selectedCustomerForSale.phone || '');
+      setCustomerCnic(selectedCustomerForSale.cnicOrGovId || '');
+      setCustomerEmail(selectedCustomerForSale.email || '');
+      setCustomerAddress(selectedCustomerForSale.address || '');
+    }
+  }, [selectedDeviceForSale, selectedCustomerForSale, isPosModalOpen]);
 
   const activeDevice = inventory.find((d) => d.id === selectedDeviceId);
 
@@ -182,6 +194,7 @@ export const PosCheckoutModal: React.FC = () => {
       saleDate: saleDate ? new Date(saleDate).toISOString() : new Date().toISOString(),
       customer: {
         name: customerName.trim(),
+        fatherName: customerFatherName.trim() || undefined,
         phone: customerPhone.trim(),
         cnicOrGovId: customerCnic.trim() || undefined,
         email: customerEmail.trim() || undefined,
@@ -224,6 +237,7 @@ export const PosCheckoutModal: React.FC = () => {
     // Close checkout and immediately open the printable invoice modal
     setIsPosModalOpen(false);
     setSelectedDeviceForSale(null);
+    setSelectedCustomerForSale(null);
     setSelectedInvoiceForModal(sale);
   };
 
@@ -231,6 +245,7 @@ export const PosCheckoutModal: React.FC = () => {
     resetSaleForm();
     setIsPosModalOpen(false);
     setSelectedDeviceForSale(null);
+    setSelectedCustomerForSale(null);
   };
 
   return (
@@ -622,6 +637,7 @@ export const PosCheckoutModal: React.FC = () => {
                           key={c.id}
                           onClick={() => {
                             setCustomerName(c.name);
+                            setCustomerFatherName(c.fatherName || '');
                             setCustomerPhone(c.phone);
                             setCustomerCnic(c.cnicOrGovId || '');
                             setCustomerEmail(c.email || '');
@@ -631,7 +647,10 @@ export const PosCheckoutModal: React.FC = () => {
                           }}
                           className="px-2.5 py-1.5 bg-slate-950/70 hover:bg-indigo-950 border border-slate-800 hover:border-indigo-600/50 rounded-md flex items-center justify-between cursor-pointer text-xs transition-colors"
                         >
-                          <span className="font-semibold text-slate-200">{c.name}</span>
+                          <div>
+                            <span className="font-semibold text-slate-200">{c.name}</span>
+                            {c.fatherName && <span className="text-[10px] text-slate-400 ml-1.5">(S/O {c.fatherName})</span>}
+                          </div>
                           <span className="text-slate-400 text-[11px]">{c.phone}</span>
                         </div>
                       ))}
@@ -644,7 +663,7 @@ export const PosCheckoutModal: React.FC = () => {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-300 mb-1">Customer Full Name *</label>
                 <input
@@ -654,6 +673,17 @@ export const PosCheckoutModal: React.FC = () => {
                   onChange={(e) => setCustomerName(e.target.value)}
                   className="w-full px-3 py-2 bg-[#12151E] border border-slate-700 rounded-lg text-xs text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
                   required
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-300 mb-1">Father's Name (S/O)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Robert Doe"
+                  value={customerFatherName}
+                  onChange={(e) => setCustomerFatherName(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#12151E] border border-slate-700 rounded-lg text-xs text-white font-medium focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
 

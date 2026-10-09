@@ -3,9 +3,16 @@
 @layer base {
   html, body {
     background-color: #0A0B0E;
-    color: #e2e8f0;
+    color: #f8fafc;
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Boost standard text contrast across dark theme */
+  p, span, label, td, th {
+    text-rendering: optimizeLegibility;
   }
 
   code, kbd, pre, .font-mono {
@@ -14,21 +21,245 @@
 
   /* Custom dark scrollbar */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
   }
   ::-webkit-scrollbar-track {
     background: #0A0B0E;
   }
   ::-webkit-scrollbar-thumb {
-    background: #232734;
+    background: #334155;
     border-radius: 9999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #33384a;
+    background: #475569;
   }
 }
 
+/* =========================================================================
+   1. GLOBAL HIGH-CONTRAST READABILITY BOOST (Makes all writing crisp & clear)
+   ========================================================================= */
+/* Elevate dull/muted gray text into bright, crisp, high-visibility text */
+.text-slate-400 {
+  color: #cbd5e1 !important; /* was #94a3b8 -> now bright readable slate-300 */
+}
+.text-slate-500 {
+  color: #94a3b8 !important; /* was #64748b -> now readable slate-400 */
+}
+.text-gray-400 {
+  color: #cbd5e1 !important;
+}
+.text-gray-500 {
+  color: #94a3b8 !important;
+}
+
+/* Make placeholders instantly legible in all inputs */
+::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1 !important;
+}
+input, select, textarea {
+  color: #ffffff !important;
+}
+
+/* =========================================================================
+   2. THEME: HIGH CONTRAST (Bright Pure White Writing on Deep Charcoal)
+   ========================================================================= */
+html.theme-high-contrast {
+  color-scheme: dark;
+}
+html.theme-high-contrast body {
+  background-color: #07080a !important;
+  color: #ffffff !important;
+}
+html.theme-high-contrast .text-slate-200,
+html.theme-high-contrast .text-slate-300 {
+  color: #ffffff !important;
+}
+html.theme-high-contrast .text-slate-400 {
+  color: #e2e8f0 !important;
+}
+html.theme-high-contrast .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+html.theme-high-contrast border-slate-800 {
+  border-color: #334155 !important;
+}
+
+/* =========================================================================
+   3. THEME: LIGHT MODE (Daylight Clean - Pure White Canvas, Bold Dark Text)
+   ========================================================================= */
+html.theme-light {
+  color-scheme: light;
+}
+html.theme-light,
+html.theme-light body {
+  background-color: #f8fafc !important;
+  color: #0f172a !important;
+}
+html.theme-light .bg-\[\#0A0B0E\],
+html.theme-light .bg-\[\#0D0F16\],
+html.theme-light .bg-\[\#10121A\],
+html.theme-light .bg-\[\#12151E\],
+html.theme-light .bg-\[\#141724\],
+html.theme-light .bg-\[\#161922\],
+html.theme-light .bg-\[\#161924\],
+html.theme-light .bg-\[\#171B26\],
+html.theme-light .bg-\[\#1C202F\],
+html.theme-light .bg-\[\#1a1e2d\],
+html.theme-light .bg-slate-900,
+html.theme-light .bg-slate-950 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Card and container borders in Light Mode */
+html.theme-light .border-slate-800,
+html.theme-light .border-slate-800\/80,
+html.theme-light .border-slate-800\/90,
+html.theme-light .border-slate-700,
+html.theme-light .border-slate-700\/80 {
+  border-color: #cbd5e1 !important;
+}
+
+/* Text overrides in Light Mode */
+html.theme-light .text-white {
+  color: #0f172a !important;
+}
+html.theme-light .text-slate-200,
+html.theme-light .text-slate-300 {
+  color: #1e293b !important;
+}
+html.theme-light .text-slate-400 {
+  color: #334155 !important;
+}
+html.theme-light .text-slate-500 {
+  color: #475569 !important;
+}
+
+/* Inputs & Form controls in Light Mode */
+html.theme-light input,
+html.theme-light select,
+html.theme-light textarea {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+html.theme-light ::placeholder {
+  color: #64748b !important;
+}
+
+/* Modal backgrounds in Light Mode */
+html.theme-light .bg-black\/80,
+html.theme-light .bg-black\/75 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* =========================================================================
+   4. THEME: WARM AMBER GOLD (Comfort Warm Text for Night Reading)
+   ========================================================================= */
+html.theme-amber {
+  color-scheme: dark;
+}
+html.theme-amber body {
+  background-color: #0c0d10 !important;
+  color: #fef08a !important;
+}
+html.theme-amber .text-white {
+  color: #fef9c3 !important;
+}
+html.theme-amber .text-slate-200,
+html.theme-amber .text-slate-300 {
+  color: #fef08a !important;
+}
+html.theme-amber .text-slate-400 {
+  color: #fde047 !important;
+}
+html.theme-amber .text-slate-500 {
+  color: #ca8a04 !important;
+}
+html.theme-amber .border-slate-800,
+html.theme-amber .border-slate-700 {
+  border-color: #713f1244 !important;
+}
+html.theme-amber input,
+html.theme-amber select,
+html.theme-amber textarea {
+  color: #fef08a !important;
+}
+html.theme-amber ::placeholder {
+  color: #ca8a04 !important;
+}
+
+/* =========================================================================
+   5. THEME: ELECTRIC MINT / EMERALD (Vibrant High-Clarity Mint)
+   ========================================================================= */
+html.theme-emerald {
+  color-scheme: dark;
+}
+html.theme-emerald body {
+  background-color: #050c0a !important;
+  color: #a7f3d0 !important;
+}
+html.theme-emerald .text-white {
+  color: #ffffff !important;
+}
+html.theme-emerald .text-slate-200,
+html.theme-emerald .text-slate-300 {
+  color: #6ee7b7 !important;
+}
+html.theme-emerald .text-slate-400 {
+  color: #34d399 !important;
+}
+html.theme-emerald .text-slate-500 {
+  color: #059669 !important;
+}
+html.theme-emerald .border-slate-800,
+html.theme-emerald .border-slate-700 {
+  border-color: #064e3b55 !important;
+}
+html.theme-emerald input,
+html.theme-emerald select,
+html.theme-emerald textarea {
+  color: #a7f3d0 !important;
+}
+html.theme-emerald ::placeholder {
+  color: #059669 !important;
+}
+
+/* =========================================================================
+   6. TEXT SIZE MODES (Likhai ka Size / Readability Zoom)
+   ========================================================================= */
+html.text-size-large {
+  font-size: 108%;
+}
+html.text-size-xlarge {
+  font-size: 118%;
+}
+html.text-size-large button,
+html.text-size-large input,
+html.text-size-large p,
+html.text-size-large span,
+html.text-size-xlarge button,
+html.text-size-xlarge input,
+html.text-size-xlarge p,
+html.text-size-xlarge span {
+  letter-spacing: 0.01em;
+}
+
+/* =========================================================================
+   7. URDU LANGUAGE STYLING (اردو خط اور سمت)
+   ========================================================================= */
+html.lang-ur {
+  font-family: 'Noto Nastaliq Urdu', 'Gulzar', 'Jameel Noori Nastaleeq', 'Segoe UI', system-ui, sans-serif;
+}
+html.lang-ur body {
+  line-height: 1.7;
+}
+
+/* =========================================================================
+   8. PRINT MEDIA STYLING
+   ========================================================================= */
 @media print {
   html, body {
     background: white !important;
@@ -50,4 +281,3 @@
     color: black !important;
   }
 }
-

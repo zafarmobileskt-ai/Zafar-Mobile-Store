@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
+import { useAuth } from '../context/AuthContext';
+import { useThemeLanguage } from '../context/ThemeLanguageContext';
+import { ReadabilityModal } from './ReadabilityModal';
 import { 
   Boxes, 
   ReceiptText, 
@@ -9,12 +12,25 @@ import {
   SlidersHorizontal, 
   Barcode, 
   Store,
+  FileText,
   FileSpreadsheet,
   PlusCircle,
   Zap,
   Package,
   Activity,
-  ShieldCheck
+  ShieldCheck,
+  User,
+  LogOut,
+  Check,
+  Palette,
+  Sun,
+  Moon,
+  Eye,
+  Languages,
+  Monitor,
+  Download,
+  RefreshCw,
+  Sparkles
 } from 'lucide-react';
 
 export const Header: React.FC = () => {
@@ -27,10 +43,33 @@ export const Header: React.FC = () => {
     setIsPosModalOpen,
     setIsBackupModalOpen,
     setIsInstallModalOpen,
+    setIsVoiceAssistantOpen,
+    exportAllToPDF,
     inventory,
     sales,
-    customers
+    customers,
+    lastAutoSaveTime,
+    cloudSyncStatus,
+    lastCloudSyncTime,
+    setIsSyncModalOpen,
+    syncNotification,
+    clearSyncNotification,
   } = useShop();
+
+  const { currentUser, logout, requireAuth } = useAuth();
+  const { textColorTheme, language, t } = useThemeLanguage();
+  const [pdfSuccess, setPdfSuccess] = useState(false);
+  const [isReadabilityModalOpen, setIsReadabilityModalOpen] = useState(false);
+
+  const handleQuickPDF = () => {
+    try {
+      exportAllToPDF(currentUser?.name || settings.ownerName || 'Admin');
+      setPdfSuccess(true);
+      setTimeout(() => setPdfSuccess(false), 3000);
+    } catch (e: any) {
+      alert('Could not generate PDF: ' + e.message);
+    }
+  };
 
   const inStockCount = inventory.filter((i) => i.status === 'in_stock').length;
   const newStockCount = inventory.filter((i) => i.status === 'in_stock' && i.deviceType === 'new').length;
@@ -40,8 +79,8 @@ export const Header: React.FC = () => {
   const navItems = [
     { 
       id: 'inventory', 
-      label: 'Inventory Hub', 
-      sublabel: 'Stock & IMEIs',
+      label: t('inventory', 'Inventory Hub'), 
+      sublabel: language === 'ur' ? 'اسٹاک اور آئی ایم ای آئی' : 'Stock & IMEIs',
       icon: Boxes, 
       badge: inStockCount,
       badgeColor: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
@@ -49,8 +88,8 @@ export const Header: React.FC = () => {
     },
     { 
       id: 'invoices', 
-      label: 'POS & Invoices', 
-      sublabel: 'Sales & Billing',
+      label: t('invoices', 'POS & Invoices'), 
+      sublabel: language === 'ur' ? 'سیل اور بلنگ' : 'Sales & Billing',
       icon: ReceiptText, 
       badge: sales.length,
       badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
@@ -58,8 +97,8 @@ export const Header: React.FC = () => {
     },
     { 
       id: 'intake', 
-      label: 'Buy Used Intake', 
-      sublabel: 'Testing & Police Cert',
+      label: t('intake', 'Buy Used Intake'), 
+      sublabel: language === 'ur' ? 'پولیس تصدیق و چیکنگ' : 'Testing & Police Cert',
       icon: Smartphone, 
       badge: usedStockCount > 0 ? `${usedStockCount} used` : undefined,
       badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
@@ -67,8 +106,8 @@ export const Header: React.FC = () => {
     },
     { 
       id: 'customers', 
-      label: 'Customers & Khata', 
-      sublabel: 'Ledger & Accounts',
+      label: t('customers', 'Customers & Khata'), 
+      sublabel: language === 'ur' ? 'کھاتہ اور بقایا ادھار' : 'Ledger & Accounts',
       icon: Users, 
       badge: customers.length,
       badgeColor: 'bg-purple-500/20 text-purple-300 border-purple-500/40',
@@ -76,16 +115,16 @@ export const Header: React.FC = () => {
     },
     { 
       id: 'analytics', 
-      label: 'Profit & Reports', 
-      sublabel: 'Margins & Analytics',
+      label: t('analytics', 'Profit & Reports'), 
+      sublabel: language === 'ur' ? 'منافع اور رپورٹس' : 'Margins & Analytics',
       icon: TrendingUp, 
       badgeColor: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
       activeColor: 'from-rose-600 to-pink-600 text-white shadow-rose-500/20'
     },
     { 
       id: 'settings', 
-      label: 'Shop Settings', 
-      sublabel: 'Config & Backup',
+      label: t('settings', 'Shop Settings'), 
+      sublabel: language === 'ur' ? 'دکان کی سیٹنگز' : 'Config & Backup',
       icon: SlidersHorizontal, 
       badgeColor: 'bg-slate-500/20 text-slate-300 border-slate-500/40',
       activeColor: 'from-slate-700 to-slate-800 text-white shadow-slate-700/20'
@@ -113,6 +152,15 @@ export const Header: React.FC = () => {
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 <span>POS Active</span>
               </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('settings')}
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-950/80 text-blue-300 border border-blue-700/50 hover:bg-blue-900/80 cursor-pointer transition-all"
+                title={`All changes auto-saved to Vault & Gmail (${settings.backupGmail || 'mebadprince@gmail.com'}) - Click to view Backup & Restore`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                <span className="truncate max-w-[130px] lg:max-w-[200px]">Auto-saved ({settings.backupGmail || 'mebadprince@gmail.com'})</span>
+              </button>
             </div>
             <p className="text-xs text-slate-400 font-normal truncate max-w-xs sm:max-w-md">
               {settings.tagline || 'Mobile Inventory, IMEI Diagnostics & Khata Ledger'}
@@ -122,6 +170,21 @@ export const Header: React.FC = () => {
 
         {/* Quick Search & Primary POS Action Buttons */}
         <div className="flex items-center flex-wrap gap-2">
+          {/* Gemini 3.8 Live Voice Assistant Button */}
+          <button
+            id="btn-voice-assistant-header"
+            onClick={() => setIsVoiceAssistantOpen(true)}
+            className="flex items-center gap-2 bg-gradient-to-r from-purple-950/80 via-indigo-950/80 to-pink-950/80 hover:from-purple-900 hover:to-indigo-900 text-purple-200 hover:text-white px-3.5 py-2 rounded-xl border border-purple-500/50 text-xs font-semibold transition-all shadow-sm cursor-pointer group"
+            title="Real-time Voice Conversation with Gemini 3.8 Live"
+          >
+            <Sparkles className="w-4 h-4 text-purple-400 group-hover:scale-110 transition-transform animate-pulse" />
+            <span className="hidden xs:inline">Voice AI</span>
+            <span className="xs:hidden">Voice</span>
+            <span className="hidden md:inline-block px-1.5 py-0.2 bg-purple-900/60 text-purple-200 text-[10px] font-bold rounded border border-purple-700/60">
+              Live
+            </span>
+          </button>
+
           {/* Quick IMEI / Customer Search Button */}
           <button
             id="btn-quick-imei-search"
@@ -136,27 +199,112 @@ export const Header: React.FC = () => {
             </kbd>
           </button>
 
-          {/* Install Mobile App / APK Button */}
+          {/* Install App (Windows .EXE / Desktop & Mobile) Button */}
           <button
             id="btn-install-mobile-app"
             onClick={() => setIsInstallModalOpen(true)}
-            className="flex items-center gap-1.5 bg-[#151824] hover:bg-[#1e2333] text-sky-400 hover:text-sky-300 px-3 py-2 rounded-xl border border-sky-800/40 text-xs font-semibold shadow-xs transition-all cursor-pointer"
-            title="Install Mobile Store app or APK on Mobile"
+            className="flex items-center gap-1.5 bg-gradient-to-r from-blue-950/70 via-sky-950/70 to-indigo-950/70 hover:from-blue-900/80 hover:to-indigo-900/80 text-sky-300 hover:text-white px-3 py-2 rounded-xl border border-sky-600/50 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+            title="Install on Windows PC (.EXE / Desktop App) or Mobile (APK / iOS)"
           >
-            <Smartphone className="w-4 h-4" />
-            <span className="hidden lg:inline">Install APK</span>
+            <Monitor className="w-4 h-4 text-sky-400" />
+            <span className="hidden lg:inline">Install (Windows &amp; Mobile)</span>
+            <span className="lg:hidden">Install</span>
           </button>
 
-          {/* Backup & Spreadsheet Export Button */}
+          {/* Single-File Master PDF Download Button */}
+          <button
+            id="btn-download-master-pdf-header"
+            onClick={handleQuickPDF}
+            className="flex items-center gap-1.5 bg-rose-950/70 hover:bg-rose-900/80 text-rose-300 hover:text-white px-3 py-2 rounded-xl border border-rose-700/50 text-xs font-semibold shadow-xs transition-all cursor-pointer"
+            title="Download all store data in a single comprehensive PDF file"
+          >
+            {pdfSuccess ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-400" />
+                <span>PDF Saved!</span>
+              </>
+            ) : (
+              <>
+                <FileText className="w-4 h-4 text-rose-400" />
+                <span className="hidden sm:inline">Export All (PDF)</span>
+                <span className="sm:hidden">PDF</span>
+              </>
+            )}
+          </button>
+
+          {/* Real-time Phone & PC Cloud Sync Status Button */}
+          <button
+            id="btn-cloud-sync-status"
+            onClick={() => setIsSyncModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold shadow-xs transition-all cursor-pointer ${
+              cloudSyncStatus === 'syncing'
+                ? 'bg-indigo-950/80 border-indigo-500/60 text-indigo-300'
+                : cloudSyncStatus === 'offline'
+                ? 'bg-amber-950/60 border-amber-600/50 text-amber-300'
+                : 'bg-[#121b22] hover:bg-[#182632] border-emerald-500/40 text-emerald-400'
+            }`}
+            title="Real-time Cross-Device Synchronization between Mobile Phone and System"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                cloudSyncStatus === 'syncing' ? 'bg-indigo-400' : 'bg-emerald-400'
+              }`}></span>
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                cloudSyncStatus === 'syncing' ? 'bg-indigo-500' : 'bg-emerald-500'
+              }`}></span>
+            </span>
+            <span className="hidden sm:inline">
+              {cloudSyncStatus === 'syncing' ? 'Syncing...' : 'Phone & PC Synced'}
+            </span>
+            <span className="sm:hidden">Sync</span>
+          </button>
+
+          {/* Backup Center & Google Drive Button */}
           <button
             id="btn-backup-sheets-export"
             onClick={() => setIsBackupModalOpen(true)}
             className="flex items-center gap-1.5 bg-[#151824] hover:bg-[#1e2333] text-emerald-400 hover:text-emerald-300 px-3 py-2 rounded-xl border border-emerald-800/40 text-xs font-semibold shadow-xs transition-all cursor-pointer"
-            title="Export Excel/Google Sheets & Backup Data to Gmail"
+            title="Export Excel/Google Sheets & Backup Data to Gmail / Drive"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            <span className="hidden lg:inline">Sheets Backup</span>
+            <span className="hidden lg:inline">Backup Hub</span>
           </button>
+
+          {/* Writing Color, Contrast & Language Readability Button */}
+          <button
+            id="btn-writing-color-mode"
+            onClick={() => setIsReadabilityModalOpen(true)}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500/15 via-blue-500/15 to-purple-500/15 hover:from-amber-500/25 hover:to-purple-500/25 text-amber-300 hover:text-white px-3 py-2 rounded-xl border border-amber-500/40 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            title="Change writing color, high-contrast readability, text size, and shop language"
+          >
+            <Palette className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">{t('writingColorLabel', 'Writing Color')}</span>
+            <span className="sm:hidden">Font</span>
+            <span className="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-200 text-[10px] font-mono uppercase tracking-wide">
+              {textColorTheme === 'high-contrast' ? 'White' : textColorTheme === 'light' ? 'Day' : textColorTheme}
+            </span>
+          </button>
+
+          {/* User Account / Lock Session Pill */}
+          {currentUser && (
+            <div className="flex items-center gap-1.5 bg-[#141724] border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs text-slate-300">
+              <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white text-[11px] font-bold">
+                {currentUser.name ? currentUser.name[0].toUpperCase() : 'A'}
+              </div>
+              <div className="hidden xl:flex flex-col text-left leading-tight">
+                <span className="text-[11px] font-bold text-white max-w-[90px] truncate">{currentUser.name}</span>
+                <span className="text-[9px] text-slate-400">{currentUser.role}</span>
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                title="Lock / Log Out of application"
+                className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 transition-colors cursor-pointer ml-1"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
 
           {/* Record Sale / POS Button */}
           <button
@@ -258,6 +406,32 @@ export const Header: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Live Cross-Device Sync Incoming Notification Banner */}
+      {syncNotification && (
+        <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 border-b border-emerald-500/40 px-4 py-2 text-xs text-emerald-200 flex items-center justify-between animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="font-bold text-white">{syncNotification}</span>
+            <span className="text-emerald-400/80 hidden sm:inline">• Live data refreshed from cloud</span>
+          </div>
+          <button
+            onClick={clearSyncNotification}
+            className="text-emerald-400 hover:text-white text-xs font-bold px-2 py-0.5 rounded hover:bg-emerald-900/60 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Writing Color, Display Contrast & Language Modal */}
+      <ReadabilityModal 
+        isOpen={isReadabilityModalOpen} 
+        onClose={() => setIsReadabilityModalOpen(false)} 
+      />
     </header>
   );
 };

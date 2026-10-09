@@ -25,16 +25,20 @@ import {
   FileSpreadsheet,
   Download,
   Printer,
-  Edit3
+  Edit3,
+  ReceiptText
 } from 'lucide-react';
 import { BarcodeScannerModal } from './BarcodeScannerModal';
 
 export const InventoryView: React.FC = () => {
   const { 
     inventory, 
+    sales,
+    customers,
     formatCurrency, 
     setSelectedDeviceForModal, 
     setSelectedPoliceCertDevice,
+    setSelectedInvoiceForModal,
     setIsAddModalOpen, 
     setDeviceToEdit,
     setIsPosModalOpen,
@@ -43,6 +47,11 @@ export const InventoryView: React.FC = () => {
     exportInventoryToSheets,
     setIsBackupModalOpen
   } = useShop();
+
+  const getSaleForItem = useCallback((item: MobileItem): SaleRecord | undefined => {
+    if (item.saleRecord) return item.saleRecord;
+    return sales.find((s) => (s.deviceId && s.deviceId === item.id) || (s.imei1 && item.imei1 && s.imei1 === item.imei1));
+  }, [sales]);
 
   // Filters & State
   const [deviceTypeFilter, setDeviceTypeFilter] = useState<'all' | 'new' | 'used'>('all');
@@ -310,14 +319,17 @@ export const InventoryView: React.FC = () => {
             </div>
           </div>
 
-          {/* Quick Segmented Tabs: All / Brand New / Used */}
+          {/* Quick Segmented Tabs: All / Brand New / Used / Sold */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
             <div className="bg-[#171B26] p-1 rounded-lg flex items-center text-xs font-medium border border-slate-700/60">
               <button
                 id="filter-type-all"
-                onClick={() => setDeviceTypeFilter('all')}
+                onClick={() => {
+                  setDeviceTypeFilter('all');
+                  if (statusFilter === 'sold') setStatusFilter('all');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-all cursor-pointer ${
-                  deviceTypeFilter === 'all'
+                  deviceTypeFilter === 'all' && statusFilter !== 'sold'
                     ? 'bg-blue-600 text-white shadow-xs font-bold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -326,9 +338,12 @@ export const InventoryView: React.FC = () => {
               </button>
               <button
                 id="filter-type-new"
-                onClick={() => setDeviceTypeFilter('new')}
+                onClick={() => {
+                  setDeviceTypeFilter('new');
+                  if (statusFilter === 'sold') setStatusFilter('all');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                  deviceTypeFilter === 'new'
+                  deviceTypeFilter === 'new' && statusFilter !== 'sold'
                     ? 'bg-emerald-600 text-white shadow-xs font-bold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
@@ -338,15 +353,33 @@ export const InventoryView: React.FC = () => {
               </button>
               <button
                 id="filter-type-used"
-                onClick={() => setDeviceTypeFilter('used')}
+                onClick={() => {
+                  setDeviceTypeFilter('used');
+                  if (statusFilter === 'sold') setStatusFilter('all');
+                }}
                 className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
-                  deviceTypeFilter === 'used'
+                  deviceTypeFilter === 'used' && statusFilter !== 'sold'
                     ? 'bg-indigo-600 text-white shadow-xs font-bold'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <Sparkles className="w-3 h-3 text-amber-300" />
                 <span>Used / Pre-Owned</span>
+              </button>
+              <button
+                id="filter-type-sold"
+                onClick={() => {
+                  setStatusFilter(statusFilter === 'sold' ? 'all' : 'sold');
+                  setDeviceTypeFilter('all');
+                }}
+                className={`px-3 py-1.5 rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'sold'
+                    ? 'bg-rose-600 text-white shadow-xs font-bold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <ReceiptText className="w-3.5 h-3.5 text-rose-300" />
+                <span>Sold History ({stats.soldCount})</span>
               </button>
             </div>
 
@@ -476,11 +509,8 @@ export const InventoryView: React.FC = () => {
               <thead>
                 <tr className="bg-[#0B0D14] text-slate-300 uppercase text-[10px] tracking-wider font-semibold border-b border-slate-800">
                   <th className="py-3 px-3.5">Device Specs</th>
-                  <th className="py-3 px-3">Condition & Battery</th>
                   <th className="py-3 px-3">Primary IMEI 1</th>
-                  <th className="py-3 px-3">Network / PTA</th>
-                  <th className="py-3 px-3 text-right">Cost Price</th>
-                  <th className="py-3 px-3 text-right">Target Price</th>
+                  <th className="py-3 px-3">Purchaser Name</th>
                   <th className="py-3 px-3 text-center">Status</th>
                   <th className="py-3 px-3.5 text-right">Actions</th>
                 </tr>
@@ -488,6 +518,7 @@ export const InventoryView: React.FC = () => {
               <tbody className="divide-y divide-slate-800/80">
                 {filteredItems.map((item) => {
                   const isSold = item.status === 'sold';
+                  const purchaserDisplayName = item.supplierOrSeller?.name || (item.saleRecord ? item.saleRecord.customer.name : 'Walk-in / Supplier');
                   return (
                     <tr
                       key={item.id}
@@ -517,33 +548,11 @@ export const InventoryView: React.FC = () => {
                               </span>
                             </div>
                             <div className="text-[11px] text-slate-400 font-medium">
-                              <span>{item.storage} {item.ram ? `• ${item.ram}` : ''}</span>
-                              <span className="mx-1 text-slate-600">•</span>
+                              {item.ram && <span>{item.ram} <span className="mx-1 text-slate-600">•</span></span>}
                               <span className="text-slate-300">{item.color}</span>
                             </div>
                           </div>
                         </div>
-                      </td>
-
-                      {/* Condition & Battery Health */}
-                      <td className="py-3 px-3">
-                        {item.deviceType === 'new' ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-300 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/40">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Sealed Box
-                          </span>
-                        ) : (
-                          <div className="space-y-1">
-                            <span className="text-[10px] font-bold text-slate-300 block truncate max-w-[130px]">
-                              {item.conditionGrade || 'Standard Grade'}
-                            </span>
-                            {item.batteryHealth ? (
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold border ${getBatteryBadgeColor(item.batteryHealth)}`}>
-                                <Battery className="w-2.5 h-2.5" />
-                                {item.batteryHealth}% Battery
-                              </span>
-                            ) : null}
-                          </div>
-                        )}
                       </td>
 
                       {/* Primary IMEI */}
@@ -553,33 +562,72 @@ export const InventoryView: React.FC = () => {
                         </span>
                       </td>
 
-                      {/* Network / PTA */}
-                      <td className="py-3 px-3 text-[11px]">
-                        <span className="font-medium text-slate-300 truncate max-w-[130px] block" title={item.networkStatus}>
-                          {item.networkStatus}
-                        </span>
-                      </td>
+                      {/* Purchaser / Buyer Info */}
+                      <td className="py-3 px-3">
+                        {(() => {
+                          const sale = getSaleForItem(item);
+                          const isItemActuallySold = isSold || !!sale;
 
-                      {/* Purchase Cost */}
-                      <td className="py-3 px-3 text-right font-medium text-slate-400">
-                        {formatCurrency(item.purchaseCost)}
-                      </td>
+                          if (isItemActuallySold && sale) {
+                            return (
+                              <div className="flex flex-col space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-indigo-300 text-xs truncate max-w-[170px]" title={sale.customer?.name}>
+                                    Buyer: {sale.customer?.name || 'Walk-in'}
+                                  </span>
+                                  {sale.customer?.fatherName && (
+                                    <span className="text-[10px] text-slate-400 font-normal">
+                                      (S/O {sale.customer.fatherName})
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-emerald-400 font-bold">
+                                  Sold: {formatCurrency(sale.finalAmount)}
+                                </div>
+                                {sale.customer?.cnicOrGovId && (
+                                  <div className="text-[9px] font-mono text-cyan-300">
+                                    CNIC: {sale.customer.cnicOrGovId}
+                                  </div>
+                                )}
+                                <div className="text-[9px] text-slate-400 font-mono flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedInvoiceForModal(sale)}
+                                    className="text-indigo-400 hover:text-indigo-300 hover:underline cursor-pointer"
+                                    title="View invoice bill"
+                                  >
+                                    Inv: {sale.invoiceNumber}
+                                  </button>
+                                  <span>• {new Date(sale.saleDate).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            );
+                          }
 
-                      {/* Target Selling Price */}
-                      <td className="py-3 px-3 text-right">
-                        <span className="font-bold text-emerald-400 text-sm block">
-                          {formatCurrency(item.sellingPriceTarget)}
-                        </span>
-                        <span className="text-[10px] text-slate-500">
-                          Margin: +{formatCurrency(item.sellingPriceTarget - item.purchaseCost)}
-                        </span>
+                          return (
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-100 text-xs truncate max-w-[170px]" title={purchaserDisplayName}>
+                                {purchaserDisplayName}
+                              </span>
+                              {item.supplierOrSeller?.phone ? (
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  {item.supplierOrSeller.phone}
+                                </span>
+                              ) : item.supplierOrSeller?.type ? (
+                                <span className="text-[10px] text-slate-500">
+                                  {item.supplierOrSeller.type}
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Status */}
                       <td className="py-3 px-3 text-center">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
                           item.status === 'in_stock' ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/50' :
-                          item.status === 'sold' ? 'bg-slate-800 text-slate-400 border border-slate-700' :
+                          item.status === 'sold' ? 'bg-indigo-950 text-indigo-300 border border-indigo-700/60' :
                           'bg-amber-950/80 text-amber-300 border border-amber-700/50'
                         }`}>
                           {item.status === 'in_stock' ? 'In Stock' : item.status === 'sold' ? 'Sold' : item.status}
@@ -589,6 +637,16 @@ export const InventoryView: React.FC = () => {
                       {/* Actions */}
                       <td className="py-3 px-3.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {isSold && item.saleRecord && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedInvoiceForModal(item.saleRecord)}
+                              className="p-1.5 text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/60 rounded-md transition-colors cursor-pointer"
+                              title="View Sale Invoice Bill"
+                            >
+                              <ReceiptText className="w-4 h-4" />
+                            </button>
+                          )}
                           {item.policeProtection && (
                             <button
                               type="button"
@@ -672,7 +730,7 @@ export const InventoryView: React.FC = () => {
                   </h4>
                   
                   <div className="text-xs text-slate-400 font-medium mt-0.5">
-                    {item.storage} {item.ram ? `/ ${item.ram}` : ''} • {item.color}
+                    {item.ram ? `${item.ram} • ` : ''}{item.color}
                   </div>
 
                   {/* IMEI pill */}
@@ -681,66 +739,107 @@ export const InventoryView: React.FC = () => {
                     <span className="font-bold select-all tracking-wider text-cyan-300">{item.imei1}</span>
                   </div>
 
-                  {/* Used device specifics: Battery, Grade */}
-                  {item.deviceType === 'used' && (
-                    <div className="mt-2 flex items-center justify-between text-xs pt-1.5 border-t border-slate-800">
-                      <span className="text-slate-400 font-medium text-[11px] truncate">{item.conditionGrade}</span>
-                      {item.batteryHealth && (
-                        <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${getBatteryBadgeColor(item.batteryHealth)}`}>
-                          {item.batteryHealth}% Battery
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  {/* Purchaser / Buyer Name Row */}
+                  <div className="mt-2 bg-[#171B26] p-2.5 rounded-lg border border-slate-700/60 text-xs space-y-1">
+                    {(() => {
+                      const sale = getSaleForItem(item);
+                      const isItemActuallySold = item.status === 'sold' || !!sale;
+
+                      if (isItemActuallySold && sale) {
+                        return (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-indigo-400 font-bold uppercase">Sold To:</span>
+                              <span className="font-bold text-emerald-400">{formatCurrency(sale.finalAmount)}</span>
+                            </div>
+                            <div className="font-bold text-slate-100 truncate">
+                              {sale.customer?.name || 'Walk-in'} {sale.customer?.fatherName && <span className="text-slate-400 font-normal text-[10px]">(S/O {sale.customer.fatherName})</span>}
+                            </div>
+                            {sale.customer?.cnicOrGovId && (
+                              <div className="text-[9px] font-mono text-cyan-300">
+                                CNIC: {sale.customer.cnicOrGovId}
+                              </div>
+                            )}
+                            <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between pt-0.5 border-t border-slate-800">
+                              <span 
+                                onClick={() => setSelectedInvoiceForModal(sale)}
+                                className="text-indigo-400 hover:underline cursor-pointer"
+                              >
+                                Inv: {sale.invoiceNumber}
+                              </span>
+                              <span>{new Date(sale.saleDate).toLocaleDateString()}</span>
+                            </div>
+                          </>
+                        );
+                      }
+
+                      return (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-slate-400 font-medium">Purchaser:</span>
+                          <span className="font-bold text-slate-200 truncate max-w-[160px]">
+                            {item.supplierOrSeller?.name || 'Walk-in / Supplier'}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
 
-                {/* Price & Action Row */}
-                <div className="pt-2.5 border-t border-slate-800 flex items-center justify-between">
-                  <div>
-                    <span className="text-[10px] text-slate-500 block">Selling Target</span>
-                    <span className="font-bold text-emerald-400 text-base">
-                      {formatCurrency(item.sellingPriceTarget)}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    {item.policeProtection && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPoliceCertDevice(item)}
-                        className="p-1.5 rounded-lg text-emerald-400 hover:text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-700/50 transition-colors cursor-pointer"
-                        title="Print Police Protection Certificate"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setSelectedDeviceForModal(item)}
-                      className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
-                    >
-                      Details
-                    </button>
+                {/* Action Buttons Row */}
+                <div className="pt-2.5 border-t border-slate-800 flex items-center justify-end gap-1.5">
+                  {(() => {
+                    const sale = getSaleForItem(item);
+                    if (item.status === 'sold' || sale) {
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => sale && setSelectedInvoiceForModal(sale)}
+                          className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900 border border-indigo-700/50 flex items-center gap-1 transition-colors cursor-pointer mr-auto"
+                          title="View Sale Bill"
+                        >
+                          <ReceiptText className="w-3.5 h-3.5" />
+                          <span>Bill</span>
+                        </button>
+                      );
+                    }
+                    return null;
+                  })()}
+                  {item.policeProtection && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setDeviceToEdit(item);
-                        setIsAddModalOpen(true);
-                      }}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
-                      title="Edit saved device entry"
+                      onClick={() => setSelectedPoliceCertDevice(item)}
+                      className="p-1.5 rounded-lg text-emerald-400 hover:text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-700/50 transition-colors cursor-pointer"
+                      title="Print Police Protection Certificate"
                     >
-                      <Edit3 className="w-3.5 h-3.5" />
+                      <Printer className="w-3.5 h-3.5" />
                     </button>
-                    {item.status === 'in_stock' && (
-                      <button
-                        onClick={() => handleSellDirect(item)}
-                        className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
-                      >
-                        <ShoppingBag className="w-3.5 h-3.5" />
-                        <span>Sell</span>
-                      </button>
-                    )}
-                  </div>
+                  )}
+                  <button
+                    onClick={() => setSelectedDeviceForModal(item)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
+                  >
+                    Details
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeviceToEdit(item);
+                      setIsAddModalOpen(true);
+                    }}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-amber-300 bg-[#171B26] hover:bg-[#1E2333] border border-slate-700/60 transition-colors cursor-pointer"
+                    title="Edit saved device entry"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  {item.status === 'in_stock' && (
+                    <button
+                      onClick={() => handleSellDirect(item)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold shadow-xs transition-all cursor-pointer"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      <span>Sell</span>
+                    </button>
+                  )}
                 </div>
 
               </div>

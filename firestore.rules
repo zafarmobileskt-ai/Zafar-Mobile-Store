@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    match /inventory/{itemId} {
+      allow read, write: if isValidId(itemId);
+    }
+
+    match /sales/{saleId} {
+      allow read, write: if isValidId(saleId);
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if isValidId(customerId);
+    }
+
+    match /store_state/{docId} {
+      allow read, write: if isValidId(docId);
+    }
+
+    match /test_collection/{docId} {
+      allow read, write: if isValidId(docId);
+    }
+
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

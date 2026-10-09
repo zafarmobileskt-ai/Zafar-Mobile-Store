@@ -499,7 +499,7 @@ export const ContactImportModal: React.FC = () => {
                       <th className="p-3 w-10 text-center">✓</th>
                       <th className="p-3">Customer Name</th>
                       <th className="p-3">Phone Number</th>
-                      <th className="p-3">Opening Balance ({settings.currencySymbol || '$'})</th>
+                      <th className="p-3">Opening Balance ({settings.currencySymbol || 'PKR '})</th>
                       <th className="p-3">Balance Nature</th>
                       <th className="p-3 w-12 text-center">Action</th>
                     </tr>

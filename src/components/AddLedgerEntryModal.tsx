@@ -871,7 +871,7 @@ export const AddLedgerEntryModal: React.FC = () => {
                         type="number"
                         step="any"
                         min="0.01"
-                        placeholder={`Opening amount (${settings.currencySymbol || '$'})`}
+                        placeholder={`Opening amount (${settings.currencySymbol || 'PKR '})`}
                         value={newOpeningAmount}
                         onChange={(e) => setNewOpeningAmount(e.target.value)}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-100 text-xs focus:outline-none focus:border-amber-500"
@@ -1142,13 +1142,13 @@ export const AddLedgerEntryModal: React.FC = () => {
     totalCredit: currentSummary.totalCredit + (entryType === 'credit' ? numAmount : 0),
   };
   const simulatedNet = Math.round((simulatedSummary.totalDebit - simulatedSummary.totalCredit) * 100) / 100;
-  let simulatedLabel = 'Settled ($0.00)';
+  let simulatedLabel = 'Settled (PKR 0)';
   let simulatedColor = 'text-emerald-400';
   if (simulatedNet > 0.01) {
-    simulatedLabel = `${settings.currencySymbol || '$'}${simulatedNet.toLocaleString()} Receivable (Customer Owes)`;
+    simulatedLabel = `${settings.currencySymbol || 'PKR '}${simulatedNet.toLocaleString()} Receivable (Customer Owes)`;
     simulatedColor = 'text-amber-400';
   } else if (simulatedNet < -0.01) {
-    simulatedLabel = `${settings.currencySymbol || '$'}${Math.abs(simulatedNet).toLocaleString()} Payable (Shop Owes)`;
+    simulatedLabel = `${settings.currencySymbol || 'PKR '}${Math.abs(simulatedNet).toLocaleString()} Payable (Shop Owes)`;
     simulatedColor = 'text-blue-400';
   }
 
@@ -1397,11 +1397,11 @@ export const AddLedgerEntryModal: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
-                Amount ({settings.currencySymbol || '$'}) *
+                Amount ({settings.currencySymbol || 'PKR '}) *
               </label>
               <div className="relative">
                 <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-bold text-slate-400">
-                  {settings.currencySymbol || '$'}
+                  {settings.currencySymbol || 'PKR '}
                 </span>
                 <input
                   type="number"

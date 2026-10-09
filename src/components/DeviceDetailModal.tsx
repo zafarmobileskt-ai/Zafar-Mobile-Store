@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useShop } from '../context/ShopContext';
 import { MobileItem } from '../types/mobile';
 import { 
@@ -38,9 +38,9 @@ export const DeviceDetailModal: React.FC = () => {
     setIsAddModalOpen
   } = useShop();
 
-  const [isEditingPurchaseDate, setIsEditingPurchaseDate] = React.useState(false);
-  const [tempPurchaseDate, setTempPurchaseDate] = React.useState('');
-  const [dateSaveSuccess, setDateSaveSuccess] = React.useState(false);
+  const [isEditingPurchaseDate, setIsEditingPurchaseDate] = useState(false);
+  const [tempPurchaseDate, setTempPurchaseDate] = useState('');
+  const [dateSaveSuccess, setDateSaveSuccess] = useState(false);
 
   if (!selectedDeviceForModal) return null;
   const item: MobileItem = selectedDeviceForModal;

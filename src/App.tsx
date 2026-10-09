@@ -1,4 +1,6 @@
 import React, { useEffect } from 'react';
+import { ThemeLanguageProvider } from './context/ThemeLanguageContext';
+import { AuthProvider } from './context/AuthContext';
 import { ShopProvider, useShop } from './context/ShopContext';
 import { Header } from './components/Header';
 import { InventoryView } from './components/InventoryView';
@@ -19,7 +21,11 @@ import { CustomerDetailModal } from './components/CustomerDetailModal';
 import { AddEditCustomerModal } from './components/AddEditCustomerModal';
 import { AddLedgerEntryModal } from './components/AddLedgerEntryModal';
 import { ContactImportModal } from './components/ContactImportModal';
+import { SyncModal } from './components/SyncModal';
 import { MobileBottomNav } from './components/MobileBottomNav';
+import { LoginModal } from './components/LoginModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { VoiceAssistantModal } from './components/VoiceAssistantModal';
 
 const ShopContent: React.FC = () => {
   const { 
@@ -79,6 +85,7 @@ const ShopContent: React.FC = () => {
       <MobileBottomNav />
 
       {/* Modals */}
+      <LoginModal />
       <DeviceDetailModal />
       <AddDeviceModal />
       <PosCheckoutModal />
@@ -98,14 +105,21 @@ const ShopContent: React.FC = () => {
       />
       <AddLedgerEntryModal />
       <ContactImportModal />
+      <SyncModal />
+      <OfflineIndicator />
+      <VoiceAssistantModal />
     </div>
   );
 };
 
 export default function App() {
   return (
-    <ShopProvider>
-      <ShopContent />
-    </ShopProvider>
+    <ThemeLanguageProvider>
+      <AuthProvider>
+        <ShopProvider>
+          <ShopContent />
+        </ShopProvider>
+      </AuthProvider>
+    </ThemeLanguageProvider>
   );
 }

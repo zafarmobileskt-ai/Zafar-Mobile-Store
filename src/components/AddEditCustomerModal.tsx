@@ -483,7 +483,7 @@ export const AddEditCustomerModal: React.FC<AddEditCustomerModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Opening Amount ({settings.currencySymbol || '$'})
+                  Opening Amount ({settings.currencySymbol || 'PKR '})
                 </label>
                 <input
                   type="number"

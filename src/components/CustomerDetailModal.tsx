@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   X, 
   User, 
@@ -30,7 +30,9 @@ import {
   Send,
   Printer,
   CheckCircle2,
-  Share2
+  Share2,
+  Copy,
+  Check
 } from 'lucide-react';
 import { useShop } from '../context/ShopContext';
 import { Customer, ManualPurchaseLog, SaleRecord, MobileItem, CustomerLedgerEntry } from '../types/mobile';
@@ -61,6 +63,8 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
     setIsAddCustomerModalOpen,
     setSelectedInvoiceForModal,
     setSelectedDeviceForSale,
+    selectedCustomerForSale,
+    setSelectedCustomerForSale,
     setIsPosModalOpen,
     deleteCustomer,
     selectedCustomerForModal,
@@ -78,6 +82,8 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'khata' | 'overview' | 'purchases' | 'matches' | 'preferences'>('khata');
   const [showAddPurchaseForm, setShowAddPurchaseForm] = useState(false);
   const [ledgerFilter, setLedgerFilter] = useState<'all' | 'debit' | 'credit' | 'overdue'>('all');
+  const [purchaseFilter, setPurchaseFilter] = useState<'all' | 'phones' | 'accessories'>('all');
+  const [copiedImei, setCopiedImei] = useState<string | null>(null);
   
   // Ledger Entry Edit Modal State
   const [editingLedgerEntry, setEditingLedgerEntry] = useState<CustomerLedgerEntry | null>(null);
@@ -90,7 +96,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
 
   // Manual purchase form & edit state
   const [manualTitle, setManualTitle] = useState('');
-  const [manualCategory, setManualCategory] = useState<'Phone' | 'Accessory' | 'Repair / Screen' | 'Audio / Buds' | 'Other'>('Accessory');
+  const [manualCategory, setManualCategory] = useState<'Phone' | 'Accessory' | 'Repair / Screen' | 'Audio / Buds' | 'Other'>('Phone');
   const [manualAmount, setManualAmount] = useState('');
   const [manualImei, setManualImei] = useState('');
   const [manualDate, setManualDate] = useState(new Date().toISOString().split('T')[0]);
@@ -98,18 +104,58 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
   const [editingManualPurchaseId, setEditingManualPurchaseId] = useState<string | null>(null);
   const [editManualPurchaseDate, setEditManualPurchaseDate] = useState('');
 
+  const handleCopyImei = (imei: string) => {
+    if (!imei) return;
+    navigator.clipboard?.writeText(imei);
+    setCopiedImei(imei);
+    setTimeout(() => setCopiedImei(null), 2000);
+  };
+
+  const handleStartSaleForCustomer = () => {
+    if (customer) {
+      setSelectedCustomerForSale(customer);
+      setIsPosModalOpen(true);
+      onClose();
+    }
+  };
+
   if (!customer) return null;
 
   // Ledger Summary
   const ledgerSummary = computeCustomerLedger(customer);
   const ledgerStatus = formatLedgerStatus(ledgerSummary, settings.currencySymbol);
 
-  // Find linked sales from invoices
-  const linkedSales: SaleRecord[] = sales.filter((s) => {
-    const phoneMatch = s.customer?.phone && customer.phone && s.customer.phone.replace(/\D/g, '') === customer.phone.replace(/\D/g, '');
-    const nameMatch = s.customer?.name && customer.name && s.customer.name.trim().toLowerCase() === customer.name.trim().toLowerCase();
-    return phoneMatch || nameMatch;
-  });
+  // Find linked sales from invoices & sold inventory
+  const linkedSales: SaleRecord[] = useMemo(() => {
+    const salesMap = new Map<string, SaleRecord>();
+    const cleanPhone = customer.phone ? customer.phone.replace(/\D/g, '') : '';
+    const cleanName = customer.name ? customer.name.trim().toLowerCase() : '';
+    const cleanCnic = customer.cnicOrGovId ? customer.cnicOrGovId.trim().toLowerCase() : '';
+
+    const isMatch = (c?: { id?: string; phone?: string; name?: string; cnicOrGovId?: string }) => {
+      if (!c) return false;
+      if (c.id && customer.id && c.id === customer.id) return true;
+      if (cleanPhone && c.phone && c.phone.replace(/\D/g, '') === cleanPhone) return true;
+      if (cleanName && c.name && c.name.trim().toLowerCase() === cleanName) return true;
+      if (cleanCnic && c.cnicOrGovId && c.cnicOrGovId.trim().toLowerCase() === cleanCnic) return true;
+      return false;
+    };
+
+    sales.forEach((s) => {
+      if (isMatch(s.customer)) {
+        salesMap.set(s.saleId, s);
+      }
+    });
+
+    inventory.forEach((item) => {
+      const sale = item.saleRecord || sales.find((s) => (s.deviceId && s.deviceId === item.id) || (s.imei1 && item.imei1 && s.imei1 === item.imei1));
+      if (sale && isMatch(sale.customer)) {
+        salesMap.set(sale.saleId, sale);
+      }
+    });
+
+    return Array.from(salesMap.values());
+  }, [sales, inventory, customer]);
 
   const manualPurchases: ManualPurchaseLog[] = customer.manualPurchases || [];
   const ledgerEntries: CustomerLedgerEntry[] = customer.ledgerEntries || [];
@@ -440,8 +486,8 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                 : 'border-transparent text-slate-600 hover:text-slate-900'
             }`}
           >
-            <ShoppingBag className="w-4 h-4" />
-            <span>Purchase History ({totalItemsCount})</span>
+            <Smartphone className="w-4 h-4 text-emerald-600" />
+            <span>Purchased Phones & Invoices ({linkedSales.length + manualPurchases.length})</span>
           </button>
 
           <button
@@ -863,35 +909,130 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: PURCHASES */}
+          {/* TAB 2: PURCHASES & PHONE HISTORY */}
           {activeSubTab === 'purchases' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
+              {/* Header & Quick Action Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Purchase & Invoiced History</h3>
-                  <p className="text-xs text-slate-500">All registered phone sales and manual items linked to {customer.name}</p>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-emerald-600" />
+                    <span>Purchased Phones & Invoiced History</span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Verified mobile devices, IMEIs, testing warranties, and sales bills for {customer.name}
+                  </p>
                 </div>
+                
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleStartSaleForCustomer}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors"
+                    title="Open POS Checkout with this customer pre-selected"
+                  >
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>+ Sell Phone (POS)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAddPurchaseForm(!showAddPurchaseForm)}
+                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>{showAddPurchaseForm ? 'Hide Form' : '+ Log Item / Phone'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Purchase Overview Stat Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Total Phones</div>
+                  <div className="text-lg font-extrabold text-slate-900 mt-0.5">
+                    {linkedSales.length + manualPurchases.filter(m => m.category === 'Phone').length} Devices
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{linkedSales.length} invoiced bills</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Total Spend</div>
+                  <div className="text-lg font-extrabold text-indigo-700 mt-0.5">
+                    {formatCurrency(totalSpend)}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Avg: {linkedSales.length ? formatCurrency(totalInvoicedSpend / linkedSales.length) : '$0'}</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Active Warranties</div>
+                  <div className="text-lg font-extrabold text-emerald-700 mt-0.5">
+                    {linkedSales.filter(s => s.warranty?.warrantyExpiry && new Date(s.warranty.warrantyExpiry) > new Date()).length} Active
+                  </div>
+                  <div className="text-[10px] text-emerald-600 mt-0.5">Official / Checking</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                  <div className="text-[10px] uppercase font-bold text-slate-400">Trade-Ins</div>
+                  <div className="text-lg font-extrabold text-blue-700 mt-0.5">
+                    {linkedSales.filter(s => s.tradeInItem).length} Traded
+                  </div>
+                  <div className="text-[10px] text-blue-600 mt-0.5">Old phones upgraded</div>
+                </div>
+              </div>
+
+              {/* Category Filter Tabs */}
+              <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                 <button
                   type="button"
-                  onClick={() => setShowAddPurchaseForm(!showAddPurchaseForm)}
-                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1 transition-colors"
+                  onClick={() => setPurchaseFilter('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    purchaseFilter === 'all'
+                      ? 'bg-slate-900 text-white'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>{showAddPurchaseForm ? 'Hide Form' : 'Log Past Purchase'}</span>
+                  All Items ({linkedSales.length + manualPurchases.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPurchaseFilter('phones')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 ${
+                    purchaseFilter === 'phones'
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Phones Only ({linkedSales.length + manualPurchases.filter(m => m.category === 'Phone').length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPurchaseFilter('accessories')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                    purchaseFilter === 'accessories'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100'
+                  }`}
+                >
+                  Accessories & Services ({manualPurchases.filter(m => m.category !== 'Phone').length})
                 </button>
               </div>
 
               {/* Manual Purchase Add Form */}
               {showAddPurchaseForm && (
                 <form onSubmit={handleAddManualPurchase} className="bg-indigo-50/60 border border-indigo-100 rounded-xl p-4 space-y-3 animate-fade-in">
-                  <div className="text-xs font-bold text-indigo-900 uppercase tracking-wider">Log Past Accessory or Device Purchase</div>
+                  <div className="text-xs font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Log Past Phone or Accessory Purchase</span>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="sm:col-span-2">
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item Title *</label>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Item / Phone Title *</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. 20W Fast Charger, Silicone Case, Screen Guard"
+                        placeholder="e.g. Apple iPhone 13 Pro (128GB - Sierra Blue) or 20W Fast Charger"
                         value={manualTitle}
                         onChange={(e) => setManualTitle(e.target.value)}
                         className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
@@ -903,18 +1044,18 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                       <select
                         value={manualCategory}
                         onChange={(e) => setManualCategory(e.target.value as any)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500 font-medium"
                       >
-                        <option value="Accessory">Accessory</option>
-                        <option value="Audio / Buds">Audio / Buds</option>
-                        <option value="Repair / Screen">Repair / Screen</option>
-                        <option value="Phone">Phone</option>
-                        <option value="Other">Other</option>
+                        <option value="Phone">Mobile Phone</option>
+                        <option value="Accessory">Accessory / Charger / Case</option>
+                        <option value="Audio / Buds">Audio / Buds / Headphones</option>
+                        <option value="Repair / Screen">Repair / Screen Replacement</option>
+                        <option value="Other">Other Service</option>
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price / Amount ({settings.currencySymbol || '$'}) *</label>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">Price / Amount ({settings.currencySymbol || 'PKR '}) *</label>
                       <input
                         type="number"
                         step="any"
@@ -922,7 +1063,7 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                         placeholder="0.00"
                         value={manualAmount}
                         onChange={(e) => setManualAmount(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500 font-semibold"
                       />
                     </div>
 
@@ -937,22 +1078,22 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">IMEI / Serial (Optional)</label>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">IMEI / Serial Number (Optional)</label>
                       <input
                         type="text"
-                        placeholder="e.g. Serial # or IMEI"
+                        placeholder="15-digit IMEI or Serial #"
                         value={manualImei}
                         onChange={(e) => setManualImei(e.target.value)}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono focus:outline-none focus:border-indigo-500"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Notes</label>
+                    <label className="block text-[11px] font-semibold text-slate-600 mb-1">Notes / Warranty Details</label>
                     <input
                       type="text"
-                      placeholder="e.g. Purchased with discount, 6 months warranty"
+                      placeholder="e.g. Mint condition, 7 days testing warranty, box included"
                       value={manualNotes}
                       onChange={(e) => setManualNotes(e.target.value)}
                       className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-indigo-500"
@@ -971,118 +1112,268 @@ export const CustomerDetailModal: React.FC<CustomerDetailModalProps> = ({
                       type="submit"
                       className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs"
                     >
-                      Save Purchase Log
+                      Save Purchase Record
                     </button>
                   </div>
                 </form>
               )}
 
-              {/* Invoices List */}
-              <div className="space-y-3">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Device Sale Invoices ({linkedSales.length})</div>
-                {linkedSales.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No formal device invoices generated under this phone number yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {linkedSales.map((sale) => (
-                      <div key={sale.saleId} className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 transition-colors flex items-center justify-between gap-3">
-                        <div className="space-y-1">
-                          <div className="font-bold text-xs sm:text-sm text-slate-900">{sale.deviceTitle}</div>
-                          <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
-                            <span>Inv: {sale.invoiceNumber}</span>
-                            <span>Date: {new Date(sale.saleDate).toLocaleDateString()}</span>
-                            <span>Paid: {sale.paymentMethod}</span>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-bold text-indigo-600">{formatCurrency(sale.finalAmount)}</div>
-                          <button
-                            onClick={() => setSelectedInvoiceForModal(sale)}
-                            className="text-[11px] text-indigo-600 hover:underline font-medium flex items-center gap-0.5 justify-end mt-0.5"
-                          >
-                            <span>View Bill</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+              {/* Invoiced Mobile Phones List */}
+              {purchaseFilter !== 'accessories' && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    <span>Invoiced Mobile Phone Purchases ({linkedSales.length})</span>
+                    <span className="text-[11px] text-slate-400 lowercase">linked by phone: {customer.phone}</span>
                   </div>
-                )}
-              </div>
+
+                  {linkedSales.length === 0 ? (
+                    <div className="p-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center space-y-2">
+                      <Smartphone className="w-8 h-8 text-slate-300 mx-auto" />
+                      <p className="text-xs text-slate-500">No official POS invoices recorded for this customer yet.</p>
+                      <button
+                        type="button"
+                        onClick={handleStartSaleForCustomer}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg inline-flex items-center gap-1.5 shadow-2xs"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" />
+                        <span>Create First Phone Sale Invoice</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {linkedSales.map((sale) => {
+                        const isWarrantyActive = sale.warranty?.warrantyExpiry && new Date(sale.warranty.warrantyExpiry) > new Date();
+
+                        return (
+                          <div 
+                            key={sale.saleId} 
+                            className="p-4 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 transition-all shadow-2xs space-y-3"
+                          >
+                            {/* Top Device Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                              <div className="flex items-start gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                                  <Smartphone className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className="font-bold text-sm sm:text-base text-slate-900">{sale.deviceTitle}</h4>
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                      sale.deviceType === 'new' 
+                                        ? 'bg-blue-50 text-blue-700 border border-blue-100' 
+                                        : 'bg-amber-50 text-amber-800 border border-amber-100'
+                                    }`}>
+                                      {sale.deviceType === 'new' ? 'Brand New (Box Pack)' : 'Certified Pre-Owned'}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-0.5">
+                                    Sold by: <span className="font-semibold text-slate-600">{sale.soldBy || 'Store Staff'}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="text-left sm:text-right">
+                                <div className="text-base font-extrabold text-emerald-700">{formatCurrency(sale.finalAmount)}</div>
+                                <div className="text-[10px] text-slate-400">
+                                  {sale.paymentMethod} {sale.discount > 0 && `(Discount: -${formatCurrency(sale.discount)})`}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Middle Details Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-slate-50/70 p-3 rounded-lg border border-slate-100">
+                              {/* IMEI Details with Copy Button */}
+                              <div className="space-y-1">
+                                <div className="text-[10px] uppercase font-bold text-slate-400">Device IMEI(s)</div>
+                                <div className="flex items-center gap-1.5 font-mono text-slate-800 font-semibold">
+                                  <span>{sale.imei1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyImei(sale.imei1)}
+                                    className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
+                                    title="Copy IMEI 1"
+                                  >
+                                    {copiedImei === sale.imei1 ? (
+                                      <Check className="w-3 h-3 text-emerald-600" />
+                                    ) : (
+                                      <Copy className="w-3 h-3" />
+                                    )}
+                                  </button>
+                                </div>
+                                {sale.imei2 && (
+                                  <div className="flex items-center gap-1.5 font-mono text-slate-500 text-[11px]">
+                                    <span>SIM 2: {sale.imei2}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyImei(sale.imei2!)}
+                                      className="p-0.5 text-slate-400 hover:text-indigo-600 rounded"
+                                      title="Copy IMEI 2"
+                                    >
+                                      {copiedImei === sale.imei2 ? (
+                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                      ) : (
+                                        <Copy className="w-2.5 h-2.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Invoice & Date */}
+                              <div className="space-y-1">
+                                <div className="text-[10px] uppercase font-bold text-slate-400">Invoice Reference</div>
+                                <div className="font-mono text-indigo-700 font-bold">{sale.invoiceNumber}</div>
+                                <div className="text-slate-500 text-[11px] flex items-center gap-1">
+                                  <Calendar className="w-3 h-3 text-slate-400" />
+                                  <span>{new Date(sale.saleDate).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+
+                              {/* Warranty Details */}
+                              <div className="space-y-1">
+                                <div className="text-[10px] uppercase font-bold text-slate-400">Warranty Status</div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`inline-block w-2 h-2 rounded-full ${isWarrantyActive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                                  <span className={`font-semibold text-xs ${isWarrantyActive ? 'text-emerald-700' : 'text-slate-500'}`}>
+                                    {isWarrantyActive ? 'Active Warranty' : 'Expired Warranty'}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-500">
+                                  {sale.warranty?.type || 'Standard Warranty'}
+                                  {sale.warranty?.warrantyExpiry && ` (Exp: ${new Date(sale.warranty.warrantyExpiry).toLocaleDateString()})`}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Trade-In Exchange Notice if applicable */}
+                            {sale.tradeInItem && (
+                              <div className="p-2.5 rounded-lg bg-blue-50/80 border border-blue-200/80 text-xs text-blue-900 flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Layers className="w-4 h-4 text-blue-600" />
+                                  <span>
+                                    Traded in old device: <b>{sale.tradeInItem.brand} {sale.tradeInItem.model}</b> (IMEI: {sale.tradeInItem.imei})
+                                  </span>
+                                </div>
+                                <span className="font-bold text-blue-700 shrink-0">
+                                  Credit Value: +{formatCurrency(sale.tradeInItem.agreedValue)}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Card Footer Actions */}
+                            <div className="flex items-center justify-between pt-1">
+                              <span className="text-[11px] text-slate-400 italic">
+                                {sale.notes ? `Note: ${sale.notes}` : 'Customer registered in official POS ledger'}
+                              </span>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedInvoiceForModal(sale)}
+                                  className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                                >
+                                  <span>View / Print Bill</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Manual Purchases List */}
-              <div className="space-y-3 pt-2">
-                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Accessories & Manual Logs ({manualPurchases.length})</div>
-                {manualPurchases.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">No accessory purchases logged yet.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {manualPurchases.map((item) => (
-                      <div key={item.id} className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-xs text-slate-900">{item.itemTitle}</span>
-                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded">
-                              {item.category}
-                            </span>
-                          </div>
-                          {editingManualPurchaseId === item.id ? (
-                            <div className="flex items-center gap-1.5 mt-1">
-                              <input
-                                type="date"
-                                value={editManualPurchaseDate}
-                                onChange={(e) => setEditManualPurchaseDate(e.target.value)}
-                                className="px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-800"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => handleSaveManualPurchaseDate(item.id)}
-                                className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer"
-                              >
-                                Save Date
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingManualPurchaseId(null)}
-                                className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[11px] cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
-                              <span>{new Date(item.date).toLocaleDateString()}</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditManualPurchaseDate(item.date ? item.date.split('T')[0] : '');
-                                  setEditingManualPurchaseId(item.id);
-                                }}
-                                className="text-indigo-600 hover:underline inline-flex items-center gap-0.5 text-[10px] cursor-pointer font-medium"
-                                title="Edit saved purchase date"
-                              >
-                                <Edit3 className="w-2.5 h-2.5" />
-                                <span>Edit Date</span>
-                              </button>
-                              {item.notes && <span>• {item.notes}</span>}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-xs font-bold text-slate-900">{formatCurrency(item.amount)}</div>
-                          <button
-                            onClick={() => deleteManualPurchase(customer.id, item.id)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded"
-                            title="Delete log"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+              {purchaseFilter !== 'phones' && (
+                <div className="space-y-3 pt-2">
+                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                    Accessories, Repairs & Logged Devices ({manualPurchases.length})
                   </div>
-                )}
-              </div>
+
+                  {manualPurchases.length === 0 ? (
+                    <p className="text-xs text-slate-400 italic">No manual accessory or service purchases logged yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {manualPurchases.map((item) => (
+                        <div key={item.id} className="p-3 rounded-xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-xs text-slate-900">{item.itemTitle}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                item.category === 'Phone' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
+                              }`}>
+                                {item.category}
+                              </span>
+                              {item.imeiOrSerial && (
+                                <span className="text-[10px] font-mono text-slate-500 bg-slate-50 px-1.5 py-0.2 rounded border border-slate-200">
+                                  IMEI: {item.imeiOrSerial}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {editingManualPurchaseId === item.id ? (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <input
+                                  type="date"
+                                  value={editManualPurchaseDate}
+                                  onChange={(e) => setEditManualPurchaseDate(e.target.value)}
+                                  className="px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-800"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveManualPurchaseDate(item.id)}
+                                  className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold cursor-pointer"
+                                >
+                                  Save Date
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingManualPurchaseId(null)}
+                                  className="px-2 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[11px] cursor-pointer"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap">
+                                <span>{new Date(item.date).toLocaleDateString()}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditManualPurchaseDate(item.date ? item.date.split('T')[0] : '');
+                                    setEditingManualPurchaseId(item.id);
+                                  }}
+                                  className="text-indigo-600 hover:underline inline-flex items-center gap-0.5 text-[10px] cursor-pointer font-medium"
+                                  title="Edit saved purchase date"
+                                >
+                                  <Edit3 className="w-2.5 h-2.5" />
+                                  <span>Edit Date</span>
+                                </button>
+                                {item.notes && <span>• {item.notes}</span>}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-xs font-bold text-slate-900">{formatCurrency(item.amount)}</div>
+                            <button
+                              onClick={() => deleteManualPurchase(customer.id, item.id)}
+                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition-colors"
+                              title="Delete log"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
 

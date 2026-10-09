@@ -1,0 +1,502 @@
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { MobileItem, SaleRecord, ShopSettings, Customer, CustomerLedgerEntry } from '../types/mobile';
+
+/**
+ * Format currency helper
+ */
+const fmtMoney = (amount: number, symbol: string = '$'): string => {
+  return `${symbol}${Number(amount || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+};
+
+/**
+ * Format date helper
+ */
+const fmtDate = (isoString?: string): string => {
+  if (!isoString) return 'N/A';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return isoString;
+    return d.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  } catch {
+    return isoString;
+  }
+};
+
+/**
+ * Calculate net ledger balance for a customer
+ */
+const getCustomerBalance = (customer: Customer): number => {
+  let netBalance = 0;
+  if (customer.openingBalance && customer.openingBalance.amount) {
+    if (customer.openingBalance.type === 'receivable') {
+      netBalance += customer.openingBalance.amount;
+    } else if (customer.openingBalance.type === 'payable') {
+      netBalance -= customer.openingBalance.amount;
+    }
+  }
+
+  (customer.ledgerEntries || []).forEach((entry: CustomerLedgerEntry) => {
+    if (entry.type === 'debit') {
+      netBalance += entry.amount || 0;
+    } else if (entry.type === 'credit') {
+      netBalance -= entry.amount || 0;
+    }
+  });
+
+  return netBalance;
+};
+
+/**
+ * Exports all shop data into a single, comprehensive PDF document
+ * Contains:
+ *  1. Header, Store Details & Timestamp
+ *  2. Executive Financial & Stock KPI Summary
+ *  3. Complete Inventory Directory (Brand, Model, Specs, IMEIs, Status, Prices)
+ *  4. Complete Sales & Invoices Records (Invoice#, Customer, Phone, Amount, Profit)
+ *  5. Complete Customer Directory & Khata / Udhar Ledger (Balances & Dues)
+ *  6. Used Phone Purchases & Trade-Ins (Intake / Seller Info)
+ */
+export const exportCompleteShopPDF = (
+  inventory: MobileItem[],
+  sales: SaleRecord[],
+  settings: ShopSettings,
+  customers: Customer[] = [],
+  generatedBy: string = 'Admin'
+) => {
+  // Create A4 Landscape PDF for optimal table readability and comprehensive columns
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const currencySymbol = settings.currencySymbol || 'PKR ';
+
+  // KPI Calculations
+  const inStockItems = inventory.filter((i) => i.status === 'in_stock');
+  const totalStockValue = inStockItems.reduce((sum, i) => sum + (i.purchaseCost || 0), 0);
+  const potentialRevenue = inStockItems.reduce((sum, i) => sum + (i.sellingPriceTarget || 0), 0);
+  const totalSalesRevenue = sales.reduce((sum, s) => sum + (s.finalAmount || 0), 0);
+  const totalNetProfit = sales.reduce((sum, s) => sum + (s.profit || 0), 0);
+  const totalReceivables = customers.reduce((sum, c) => {
+    const bal = getCustomerBalance(c);
+    return bal > 0 ? sum + bal : sum;
+  }, 0);
+
+  const primaryColor: [number, number, number] = [15, 23, 42]; // Slate 900
+  const accentColor: [number, number, number] = [14, 116, 144]; // Cyan 700
+
+  // ================= PAGE 1: COVER & EXECUTIVE SUMMARY =================
+  // Header Banner
+  doc.setFillColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+  doc.rect(0, 0, pageWidth, 38, 'F');
+
+  // Accent Stripe
+  doc.setFillColor(accentColor[0], accentColor[1], accentColor[2]);
+  doc.rect(0, 38, pageWidth, 2.5, 'F');
+
+  // Store Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.setTextColor(255, 255, 255);
+  doc.text(settings.shopName || 'ZAFAR MOBILE STORE', 14, 16);
+
+  // Subtitle / Tagline
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(203, 213, 225); // Slate 300
+  doc.text(settings.tagline || 'Mobile Sales, Certified Pre-Owned & POS Record System', 14, 22);
+
+  // Store Contact Info on right
+  doc.setFontSize(8.5);
+  doc.setTextColor(226, 232, 240);
+  const rightTextX = pageWidth - 14;
+  doc.text(`Phone: ${settings.phone || 'N/A'} | Email: ${settings.email || 'N/A'}`, rightTextX, 15, { align: 'right' });
+  doc.text(`Address: ${settings.address || 'Electronics Market'}`, rightTextX, 21, { align: 'right' });
+  doc.text(`Owner: ${settings.ownerName || 'Store Admin'}`, rightTextX, 27, { align: 'right' });
+
+  // Document Title & Generation Info
+  let currentY = 48;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(15);
+  doc.setTextColor(15, 23, 42);
+  doc.text('COMPLETE SHOP ALL-IN-ONE MASTER REPORT', 14, currentY);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 116, 139);
+  const nowStr = new Date().toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  doc.text(`Generated on: ${nowStr} | Generated by: ${generatedBy} | Single Master File (.PDF)`, 14, currentY + 5);
+
+  currentY += 14;
+
+  // KPI Metrics Summary Box
+  doc.setFillColor(248, 250, 252); // Slate 50
+  doc.setDrawColor(226, 232, 240); // Slate 200
+  doc.roundedRect(14, currentY, pageWidth - 28, 32, 3, 3, 'FD');
+
+  const cardWidth = (pageWidth - 28) / 4;
+
+  // Card 1: In-Stock Valuation
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('CURRENT STOCK ASSETS', 14 + 6, currentY + 9);
+  doc.setFontSize(13);
+  doc.setTextColor(15, 23, 42);
+  doc.text(fmtMoney(totalStockValue, currencySymbol), 14 + 6, currentY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`${inStockItems.length} active units (Exp. Rev: ${fmtMoney(potentialRevenue, currencySymbol)})`, 14 + 6, currentY + 25);
+
+  // Card 2: Total Sales & Revenue
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('TOTAL SALES REVENUE', 14 + cardWidth + 6, currentY + 9);
+  doc.setFontSize(13);
+  doc.setTextColor(14, 116, 144);
+  doc.text(fmtMoney(totalSalesRevenue, currencySymbol), 14 + cardWidth + 6, currentY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`${sales.length} total invoice transactions`, 14 + cardWidth + 6, currentY + 25);
+
+  // Card 3: Realized Net Profit
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('TOTAL NET PROFIT', 14 + cardWidth * 2 + 6, currentY + 9);
+  doc.setFontSize(13);
+  doc.setTextColor(16, 185, 129);
+  doc.text(fmtMoney(totalNetProfit, currencySymbol), 14 + cardWidth * 2 + 6, currentY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  const marginPct = totalSalesRevenue > 0 ? ((totalNetProfit / totalSalesRevenue) * 100).toFixed(1) : '0';
+  doc.text(`Overall Margin: ${marginPct}%`, 14 + cardWidth * 2 + 6, currentY + 25);
+
+  // Card 4: Customers & Khata Receivables
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text('CUSTOMERS & UDHAR', 14 + cardWidth * 3 + 6, currentY + 9);
+  doc.setFontSize(13);
+  doc.setTextColor(225, 29, 72); // Rose 600
+  doc.text(fmtMoney(totalReceivables, currencySymbol), 14 + cardWidth * 3 + 6, currentY + 18);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`${customers.length} customers registered`, 14 + cardWidth * 3 + 6, currentY + 25);
+
+  currentY += 40;
+
+  // ================= SECTION 1: INVENTORY TABLE =================
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text('1. Inventory Directory (Phones & Stock)', 14, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Total Records: ${inventory.length} units`, pageWidth - 14, currentY, { align: 'right' });
+
+  const inventoryBody = inventory.map((item, idx) => [
+    String(idx + 1),
+    item.brand,
+    item.model,
+    `${item.ram ? `${item.ram} - ` : ''}${item.color}`,
+    item.imei1,
+    item.supplierOrSeller?.name || (item.saleRecord ? item.saleRecord.customer.name : 'Walk-in / Supplier'),
+    item.status.toUpperCase().replace('_', ' '),
+  ]);
+
+  autoTable(doc, {
+    startY: currentY + 4,
+    head: [['#', 'Brand', 'Model', 'Specs & Color', 'Primary IMEI', 'Purchaser Name', 'Status']],
+    body: inventoryBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [30, 41, 59], // Slate 800
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold',
+      halign: 'left',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      overflow: 'linebreak',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 32, fontStyle: 'bold' },
+      2: { cellWidth: 46 },
+      3: { cellWidth: 54 },
+      4: { cellWidth: 46, font: 'courier' },
+      5: { cellWidth: 52 },
+      6: { cellWidth: 32, halign: 'center', fontStyle: 'bold' },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ================= SECTION 2: SALES & INVOICES =================
+  doc.addPage('a4', 'landscape');
+  currentY = 20;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text('2. Sales & Invoices Records', 14, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Total Invoices: ${sales.length} | Revenue: ${fmtMoney(totalSalesRevenue, currencySymbol)}`, pageWidth - 14, currentY, { align: 'right' });
+
+  const salesBody = sales.map((s, idx) => [
+    String(idx + 1),
+    s.invoiceNumber,
+    fmtDate(s.saleDate),
+    s.customer?.name || 'Walk-in Customer',
+    s.customer?.phone || 'N/A',
+    s.deviceTitle,
+    s.imei1,
+    fmtMoney(s.soldPrice, currencySymbol),
+    s.discount > 0 ? fmtMoney(s.discount, currencySymbol) : '-',
+    fmtMoney(s.finalAmount, currencySymbol),
+    fmtMoney(s.profit, currencySymbol),
+    s.paymentMethod,
+    s.soldBy || 'Staff',
+  ]);
+
+  autoTable(doc, {
+    startY: currentY + 4,
+    head: [['#', 'Invoice #', 'Date', 'Customer', 'Phone', 'Device Sold', 'IMEI', 'Price', 'Disc.', 'Paid Amt', 'Profit', 'Payment', 'Staff']],
+    body: salesBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [14, 116, 144], // Cyan 700
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold',
+      halign: 'left',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      overflow: 'linebreak',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 26, fontStyle: 'bold' },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 32 },
+      4: { cellWidth: 24 },
+      5: { cellWidth: 42 },
+      6: { cellWidth: 34, font: 'courier' },
+      7: { cellWidth: 16, halign: 'right' },
+      8: { cellWidth: 12, halign: 'right' },
+      9: { cellWidth: 18, halign: 'right', fontStyle: 'bold' },
+      10: { cellWidth: 16, halign: 'right' },
+      11: { cellWidth: 22 },
+      12: { cellWidth: 16 },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ================= SECTION 3: CUSTOMERS & KHATA LEDGER =================
+  doc.addPage('a4', 'landscape');
+  currentY = 20;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12);
+  doc.setTextColor(15, 23, 42);
+  doc.text('3. Customer Khata & Accounts Directory', 14, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Total Customers: ${customers.length} | Outstanding Udhar: ${fmtMoney(totalReceivables, currencySymbol)}`, pageWidth - 14, currentY, { align: 'right' });
+
+  const customersBody = customers.map((c, idx) => {
+    const netBal = getCustomerBalance(c);
+    const linkedSales = sales.filter(
+      (s) => (s.customer?.phone && s.customer.phone === c.phone) || (s.customer?.name && s.customer.name.toLowerCase() === c.name.toLowerCase())
+    );
+    const totalInvoicedSpend = linkedSales.reduce((acc, s) => acc + (s.finalAmount || 0), 0);
+    const manualSpend = (c.manualPurchases || []).reduce((acc, m) => acc + (m.amount || 0), 0);
+    const totalSpend = totalInvoicedSpend + manualSpend;
+    const purchasesCount = linkedSales.length + (c.manualPurchases?.length || 0);
+
+    return [
+      String(idx + 1),
+      c.name,
+      c.phone,
+      c.cnicOrGovId || 'N/A',
+      c.address || 'N/A',
+      String(purchasesCount),
+      fmtMoney(totalSpend, currencySymbol),
+      netBal > 0 
+        ? `${fmtMoney(netBal, currencySymbol)} (Receivable)` 
+        : netBal < 0 
+          ? `${fmtMoney(Math.abs(netBal), currencySymbol)} (Payable)` 
+          : 'Settled ($0.00)',
+      c.notes || '-',
+    ];
+  });
+
+  autoTable(doc, {
+    startY: currentY + 4,
+    head: [['#', 'Customer Name', 'Phone', 'CNIC / Gov ID', 'Address / City', 'Purchases', 'Total Spent', 'Khata Balance', 'Notes']],
+    body: customersBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [124, 58, 237], // Purple 600
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold',
+      halign: 'left',
+    },
+    styles: {
+      fontSize: 7.5,
+      cellPadding: 2,
+      textColor: [30, 41, 59],
+      overflow: 'linebreak',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 35, fontStyle: 'bold' },
+      2: { cellWidth: 28 },
+      3: { cellWidth: 32 },
+      4: { cellWidth: 45 },
+      5: { cellWidth: 20, halign: 'center' },
+      6: { cellWidth: 25, halign: 'right' },
+      7: { cellWidth: 35, halign: 'center', fontStyle: 'bold' },
+      8: { cellWidth: 40 },
+    },
+    margin: { left: 14, right: 14 },
+  });
+
+  // ================= SECTION 4: USED MOBILE PURCHASES & TRADE-INS =================
+  const usedPurchases = inventory.filter((item) => item.deviceType === 'used' || item.supplierOrSeller?.type === 'Walk-in Customer');
+  if (usedPurchases.length > 0) {
+    doc.addPage('a4', 'landscape');
+    currentY = 20;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(15, 23, 42);
+    doc.text('4. Used Phone Intakes & Anti-Theft / Police Verification Log', 14, currentY);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Total Intake Devices: ${usedPurchases.length}`, pageWidth - 14, currentY, { align: 'right' });
+
+    const usedBody = usedPurchases.map((u, idx) => [
+      String(idx + 1),
+      `${u.brand} ${u.model}`,
+      u.imei1,
+      u.supplierOrSeller?.name || 'Walk-in Seller',
+      u.supplierOrSeller?.phone || 'N/A',
+      u.supplierOrSeller?.cnicOrGovId || 'N/A',
+      fmtDate(u.purchaseDate),
+      fmtMoney(u.purchaseCost, currencySymbol),
+      u.conditionGrade || 'Used',
+      u.policeProtection?.verificationStatus === 'verified' ? 'Verified Clean' : 'Pending / Exempt',
+    ]);
+
+    autoTable(doc, {
+      startY: currentY + 4,
+      head: [['#', 'Device Description', 'IMEI', 'Seller Name', 'Seller Phone', 'CNIC / ID Card', 'Intake Date', 'Cost', 'Condition', 'Police Verification']],
+      body: usedBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [180, 83, 9], // Amber 700
+        textColor: [255, 255, 255],
+        fontSize: 8,
+        fontStyle: 'bold',
+        halign: 'left',
+      },
+      styles: {
+        fontSize: 7.5,
+        cellPadding: 2,
+        textColor: [30, 41, 59],
+        overflow: 'linebreak',
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: 'center' },
+        1: { cellWidth: 42, fontStyle: 'bold' },
+        2: { cellWidth: 36, font: 'courier' },
+        3: { cellWidth: 32 },
+        4: { cellWidth: 26 },
+        5: { cellWidth: 32 },
+        6: { cellWidth: 22 },
+        7: { cellWidth: 20, halign: 'right' },
+        8: { cellWidth: 24 },
+        9: { cellWidth: 28, halign: 'center' },
+      },
+      margin: { left: 14, right: 14 },
+    });
+  }
+
+  // ================= FOOTER & PAGE NUMBERING FOR ALL PAGES =================
+  const totalPages = doc.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184); // Slate 400
+
+    // Footer divider line
+    doc.setDrawColor(226, 232, 240);
+    doc.line(14, pageHeight - 10, pageWidth - 14, pageHeight - 10);
+
+    // Left text
+    doc.text(
+      `${settings.shopName || 'ZAFAR MOBILE STORE'} | Complete Single-File Master Shop Report | Confidential`,
+      14,
+      pageHeight - 6
+    );
+
+    // Right page number
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 6, { align: 'right' });
+  }
+
+  // Generate clean filename with timestamp
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const cleanShopName = (settings.shopName || 'Zafar_Mobile').replace(/\s+/g, '_');
+  const fileName = `${cleanShopName}_Complete_Shop_Report_${dateStr}.pdf`;
+
+  // Download directly to device
+  doc.save(fileName);
+};

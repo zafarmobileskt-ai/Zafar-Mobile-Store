@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   MobileItem, 
   SaleRecord, 
@@ -20,6 +20,38 @@ import {
   exportCustomersSheet,
   generateGmailBackupDraft 
 } from '../utils/sheetExport';
+import { exportCompleteShopPDF } from '../utils/pdfExport';
+import {
+  createBackupPayload,
+  validateBackupData,
+  saveGmailSnapshot,
+  getGmailSnapshots,
+  getGmailSnapshotsAsync,
+  getLatestGmailSnapshot,
+  getLatestGmailSnapshotAsync,
+  updatePermanentVault,
+  getPermanentVault,
+  getPermanentVaultAsync,
+  performAutoSave,
+  getAutoSaveMeta,
+  getLocalEmergencySnapshot,
+  storeLocalEmergencySnapshot,
+  normalizeGmail,
+  GmailSnapshotRecord,
+  AutoSaveMeta,
+} from '../services/backupService';
+import {
+  listDriveBackups,
+  downloadBackupFromDrive,
+  uploadBackupToDrive,
+  getAccessToken,
+} from '../services/googleDriveService';
+import {
+  pushStoreToCloud,
+  pullStoreFromCloud,
+  setupRealtimeSync,
+  mergeStoreDatasets
+} from '../services/cloudSyncService';
 
 interface ShopContextType {
   inventory: MobileItem[];
@@ -28,6 +60,28 @@ interface ShopContextType {
   settings: ShopSettings;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  
+  // Auto-Save & Cloud Vault
+  lastAutoSaveTime: string;
+  isAutoSaving: boolean;
+  autoSaveStatus: string;
+  
+  // Gmail ID Restore & Backup Operations
+  restoreWithGmailId: (gmailId: string, snapshotId?: string) => Promise<{ success: boolean; message: string; counts?: { inventory: number; sales: number; customers: number } }>;
+  restoreFullBackup: (data: any) => { success: boolean; message: string; counts?: { inventory: number; sales: number; customers: number } };
+  triggerGmailCloudSync: (customEmail?: string, reason?: string) => Promise<{ success: boolean; message: string; driveUploaded?: boolean }>;
+  getAvailableGmailBackups: (gmailId?: string) => Promise<Array<{
+    id: string;
+    name: string;
+    timestamp: string;
+    dateFormatted: string;
+    source: 'drive' | 'local_vault';
+    inventoryCount: number;
+    salesCount: number;
+    customersCount: number;
+    reason?: string;
+    data?: any;
+  }>>;
   
   // Mobile Operations
   addMobile: (data: Omit<MobileItem, 'id' | 'createdAt' | 'updatedAt'>) => MobileItem;
@@ -79,7 +133,8 @@ interface ShopContextType {
   importDataJSON: (jsonStr: string) => { success: boolean; message: string };
   resetToSampleData: () => void;
   
-  // Spreadsheet & Backup Exports
+  // Master Single File PDF & Spreadsheet Exports
+  exportAllToPDF: (generatedBy?: string) => void;
   exportAllToSheets: () => void;
   exportInventoryToSheets: (format?: 'xlsx' | 'csv') => void;
   exportSalesToSheets: (format?: 'xlsx' | 'csv') => void;
@@ -119,10 +174,21 @@ interface ShopContextType {
   setIsPosModalOpen: (open: boolean) => void;
   selectedDeviceForSale: MobileItem | null;
   setSelectedDeviceForSale: (device: MobileItem | null) => void;
+  selectedCustomerForSale: Customer | null;
+  setSelectedCustomerForSale: (customer: Customer | null) => void;
   isBackupModalOpen: boolean;
   setIsBackupModalOpen: (open: boolean) => void;
   isInstallModalOpen: boolean;
   setIsInstallModalOpen: (open: boolean) => void;
+  isVoiceAssistantOpen: boolean;
+  setIsVoiceAssistantOpen: (open: boolean) => void;
+  isSyncModalOpen: boolean;
+  setIsSyncModalOpen: (open: boolean) => void;
+  cloudSyncStatus: 'synced' | 'syncing' | 'offline' | 'error';
+  lastCloudSyncTime: string | null;
+  forceSyncNow: () => Promise<void>;
+  syncNotification: string | null;
+  clearSyncNotification: () => void;
 }
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
@@ -225,6 +291,16 @@ const sanitizeInventoryList = (list: MobileItem[]): MobileItem[] => {
     if (!finalItem.id || seenIds.has(finalItem.id)) {
       finalItem.id = generateSecureId('MOB', result);
     }
+    // Convert small legacy USD amounts to realistic Pakistani Rupee values
+    if (finalItem.purchaseCost > 0 && finalItem.purchaseCost < 5000) {
+      finalItem.purchaseCost = Math.round(finalItem.purchaseCost * 280);
+    }
+    if (finalItem.sellingPriceTarget > 0 && finalItem.sellingPriceTarget < 5000) {
+      finalItem.sellingPriceTarget = Math.round(finalItem.sellingPriceTarget * 280);
+    }
+    if (finalItem.minPrice > 0 && finalItem.minPrice < 5000) {
+      finalItem.minPrice = Math.round(finalItem.minPrice * 280);
+    }
     seenIds.add(finalItem.id);
     result.push(finalItem);
   }
@@ -242,6 +318,16 @@ const sanitizeSalesList = (list: SaleRecord[]): SaleRecord[] => {
     if (!saleIdKey || seenIds.has(saleIdKey)) {
       finalSale.saleId = generateSecureId('SALE', result);
     }
+    // Convert small legacy USD amounts to realistic Pakistani Rupee values
+    if (finalSale.soldPrice > 0 && finalSale.soldPrice < 5000) {
+      finalSale.soldPrice = Math.round(finalSale.soldPrice * 280);
+      finalSale.purchaseCost = Math.round(finalSale.purchaseCost * 280);
+      finalSale.finalAmount = Math.round(finalSale.finalAmount * 280);
+      finalSale.profit = Math.round(finalSale.profit * 280);
+      if (finalSale.discount > 0 && finalSale.discount < 500) {
+        finalSale.discount = Math.round(finalSale.discount * 280);
+      }
+    }
     seenIds.add(finalSale.saleId);
     result.push(finalSale);
   }
@@ -249,10 +335,26 @@ const sanitizeSalesList = (list: SaleRecord[]): SaleRecord[] => {
 };
 
 export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Multi-tier recovery check: Primary localStorage -> Permanent Safety Vault -> Gmail Snapshots -> Emergency snapshot -> Sample data
   const [inventory, setInventory] = useState<MobileItem[]>(() => {
     try {
       const saved = localStorage.getItem(INVENTORY_STORAGE_KEY) || localStorage.getItem('apex_mobile_inventory_v1');
-      if (saved) return sanitizeInventoryList(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeInventoryList(parsed);
+      }
+      const vault = getPermanentVault();
+      if (vault?.inventory && Array.isArray(vault.inventory) && vault.inventory.length > 0) {
+        return sanitizeInventoryList(vault.inventory);
+      }
+      const gmailSnapshot = getLatestGmailSnapshot('mebadprince@gmail.com');
+      if (gmailSnapshot?.inventory && Array.isArray(gmailSnapshot.inventory) && gmailSnapshot.inventory.length > 0) {
+        return sanitizeInventoryList(gmailSnapshot.inventory);
+      }
+      const emergency = getLocalEmergencySnapshot();
+      if (emergency?.inventory && Array.isArray(emergency.inventory) && emergency.inventory.length > 0) {
+        return sanitizeInventoryList(emergency.inventory);
+      }
     } catch (e) {
       console.error('Failed reading inventory from localStorage', e);
     }
@@ -262,7 +364,22 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [sales, setSales] = useState<SaleRecord[]>(() => {
     try {
       const saved = localStorage.getItem(SALES_STORAGE_KEY) || localStorage.getItem('apex_mobile_sales_v1');
-      if (saved) return sanitizeSalesList(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeSalesList(parsed);
+      }
+      const vault = getPermanentVault();
+      if (vault?.sales && Array.isArray(vault.sales) && vault.sales.length > 0) {
+        return sanitizeSalesList(vault.sales);
+      }
+      const gmailSnapshot = getLatestGmailSnapshot('mebadprince@gmail.com');
+      if (gmailSnapshot?.sales && Array.isArray(gmailSnapshot.sales) && gmailSnapshot.sales.length > 0) {
+        return sanitizeSalesList(gmailSnapshot.sales);
+      }
+      const emergency = getLocalEmergencySnapshot();
+      if (emergency?.sales && Array.isArray(emergency.sales) && emergency.sales.length > 0) {
+        return sanitizeSalesList(emergency.sales);
+      }
     } catch (e) {
       console.error('Failed reading sales from localStorage', e);
     }
@@ -272,7 +389,22 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [customers, setCustomers] = useState<Customer[]>(() => {
     try {
       const saved = localStorage.getItem(CUSTOMERS_STORAGE_KEY);
-      if (saved) return sanitizeCustomersList(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return sanitizeCustomersList(parsed);
+      }
+      const vault = getPermanentVault();
+      if (vault?.customers && Array.isArray(vault.customers) && vault.customers.length > 0) {
+        return sanitizeCustomersList(vault.customers);
+      }
+      const gmailSnapshot = getLatestGmailSnapshot('mebadprince@gmail.com');
+      if (gmailSnapshot?.customers && Array.isArray(gmailSnapshot.customers) && gmailSnapshot.customers.length > 0) {
+        return sanitizeCustomersList(gmailSnapshot.customers);
+      }
+      const emergency = getLocalEmergencySnapshot();
+      if (emergency?.customers && Array.isArray(emergency.customers) && emergency.customers.length > 0) {
+        return sanitizeCustomersList(emergency.customers);
+      }
     } catch (e) {
       console.error('Failed reading customers from localStorage', e);
     }
@@ -287,13 +419,37 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (parsed.shopName === 'Apex Mobile Zone & Tech Hub') {
           parsed.shopName = 'ZAFAR MOBILE STORE';
         }
+        if (!parsed.backupGmail) {
+          parsed.backupGmail = 'mebadprince@gmail.com';
+        }
+        // User requested: Show value in PKR
+        if (!parsed.currency || parsed.currency === 'USD') {
+          parsed.currency = 'PKR';
+          parsed.currencySymbol = 'PKR ';
+        }
         return parsed;
+      }
+      const vault = getPermanentVault();
+      if (vault?.settings) {
+        return { 
+          ...vault.settings, 
+          currency: vault.settings.currency === 'USD' ? 'PKR' : (vault.settings.currency || 'PKR'),
+          currencySymbol: vault.settings.currencySymbol === '$' ? 'PKR ' : (vault.settings.currencySymbol || 'PKR '),
+          backupGmail: vault.settings.backupGmail || 'mebadprince@gmail.com' 
+        };
       }
     } catch (e) {
       console.error('Failed reading settings from localStorage', e);
     }
-    return initialSettings;
+    return { ...initialSettings, currency: 'PKR', currencySymbol: 'PKR ', backupGmail: 'mebadprince@gmail.com' };
   });
+
+  const [lastAutoSaveTime, setLastAutoSaveTime] = useState<string>(() => {
+    const meta = getAutoSaveMeta();
+    return meta?.lastSavedTime || new Date().toISOString();
+  });
+  const [isAutoSaving, setIsAutoSaving] = useState<boolean>(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('Auto-Save Active (Protected)');
 
   const [activeTab, setActiveTab] = useState<string>('inventory');
   
@@ -314,28 +470,125 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isImeiSearchOpen, setIsImeiSearchOpen] = useState<boolean>(false);
   const [isPosModalOpen, setIsPosModalOpen] = useState<boolean>(false);
   const [selectedDeviceForSale, setSelectedDeviceForSale] = useState<MobileItem | null>(null);
+  const [selectedCustomerForSale, setSelectedCustomerForSale] = useState<Customer | null>(null);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState<boolean>(false);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState<boolean>(false);
+  const [isVoiceAssistantOpen, setIsVoiceAssistantOpen] = useState<boolean>(false);
 
-  // Sync to local storage
-  useEffect(() => {
-    localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(inventory));
-  }, [inventory]);
+  // Cross-device cloud sync states
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'synced' | 'syncing' | 'offline' | 'error'>('synced');
+  const [lastCloudSyncTime, setLastCloudSyncTime] = useState<string | null>(null);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [syncNotification, setSyncNotification] = useState<string | null>(null);
 
-  useEffect(() => {
-    localStorage.setItem(SALES_STORAGE_KEY, JSON.stringify(sales));
-  }, [sales]);
+  const isUpdatingFromCloud = useRef(false);
+  const syncDebounceTimer = useRef<any>(null);
 
+  // 1. Initial Cloud Sync on Mount & Real-time listener for incoming changes from other devices (e.g. Phone -> PC)
   useEffect(() => {
-    localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(customers));
-  }, [customers]);
+    // Initial fetch from cloud master
+    pullStoreFromCloud().then((res) => {
+      if (res.success && res.data) {
+        const cloudData = res.data;
+        isUpdatingFromCloud.current = true;
+        setInventory((prevInv) => {
+          const merged = mergeStoreDatasets({ inventory: prevInv, sales: [], customers: [], settings }, cloudData);
+          return sanitizeInventoryList(merged.inventory);
+        });
+        setSales((prevSales) => {
+          const merged = mergeStoreDatasets({ inventory: [], sales: prevSales, customers: [], settings }, cloudData);
+          return sanitizeSalesList(merged.sales);
+        });
+        setCustomers((prevCusts) => {
+          const merged = mergeStoreDatasets({ inventory: [], sales: [], customers: prevCusts, settings }, cloudData);
+          return sanitizeCustomersList(merged.customers);
+        });
+        if (cloudData.settings) {
+          setSettings((prev) => ({ ...prev, ...cloudData.settings }));
+        }
+        setLastCloudSyncTime(new Date().toLocaleTimeString());
+        setCloudSyncStatus('synced');
+        setTimeout(() => {
+          isUpdatingFromCloud.current = false;
+        }, 500);
+      } else {
+        // If cloud had nothing yet, push local storage to cloud so other devices have it!
+        pushStoreToCloud({ inventory, sales, customers, settings });
+      }
+    });
 
+    // Setup real-time listener (SSE + interval polling + Firestore snapshot)
+    const cleanup = setupRealtimeSync((cloudData) => {
+      if (isUpdatingFromCloud.current) return;
+      isUpdatingFromCloud.current = true;
+
+      setInventory((prevInv) => {
+        const merged = mergeStoreDatasets({ inventory: prevInv, sales: [], customers: [], settings }, cloudData);
+        return sanitizeInventoryList(merged.inventory);
+      });
+      setSales((prevSales) => {
+        const merged = mergeStoreDatasets({ inventory: [], sales: prevSales, customers: [], settings }, cloudData);
+        return sanitizeSalesList(merged.sales);
+      });
+      setCustomers((prevCusts) => {
+        const merged = mergeStoreDatasets({ inventory: [], sales: [], customers: prevCusts, settings }, cloudData);
+        return sanitizeCustomersList(merged.customers);
+      });
+      if (cloudData.settings) {
+        setSettings((prev) => ({ ...prev, ...cloudData.settings }));
+      }
+      setLastCloudSyncTime(new Date().toLocaleTimeString());
+      setCloudSyncStatus('synced');
+      setSyncNotification('Synchronized live entries with Mobile Phone / System');
+      setTimeout(() => {
+        isUpdatingFromCloud.current = false;
+      }, 500);
+    });
+
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Sync to local storage & Continuous Auto-Save with Multi-Layer Alteration Protection
   useEffect(() => {
-    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    try {
+      localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(inventory));
+      localStorage.setItem(SALES_STORAGE_KEY, JSON.stringify(sales));
+      localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(customers));
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+
+      const targetEmail = normalizeGmail(settings.backupGmail || 'mebadprince@gmail.com');
+      const payload = createBackupPayload(inventory, sales, customers, settings);
+      
+      const meta = performAutoSave(targetEmail, payload, 'Auto-Saved on Change');
+      setLastAutoSaveTime(meta.lastSavedTime);
+      setAutoSaveStatus(`Auto-saved to Vault & Gmail (${targetEmail})`);
+
+      // Push to central cloud if not currently receiving a cloud update
+      if (!isUpdatingFromCloud.current) {
+        setCloudSyncStatus('syncing');
+        clearTimeout(syncDebounceTimer.current);
+        syncDebounceTimer.current = setTimeout(() => {
+          pushStoreToCloud({ inventory, sales, customers, settings })
+            .then((res) => {
+              if (res.success) {
+                setCloudSyncStatus('synced');
+                setLastCloudSyncTime(new Date().toLocaleTimeString());
+              }
+            })
+            .catch(() => {
+              setCloudSyncStatus('offline');
+            });
+        }, 350);
+      }
+    } catch (err) {
+      console.warn('Auto-save error:', err);
+    }
+  }, [inventory, sales, customers, settings]);
 
   const formatCurrency = (amount: number): string => {
-    const symbol = settings.currencySymbol || '$';
+    const symbol = settings.currencySymbol || 'PKR ';
     return `${symbol}${Number(amount || 0).toLocaleString(undefined, {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
@@ -832,6 +1085,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         updateCustomer(existing.id, {
           name: saleInput.customer.name || existing.name,
+          fatherName: saleInput.customer.fatherName || existing.fatherName,
           email: saleInput.customer.email || existing.email,
           cnicOrGovId: saleInput.customer.cnicOrGovId || existing.cnicOrGovId,
           address: saleInput.customer.address || existing.address,
@@ -850,6 +1104,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         addCustomer({
           name: saleInput.customer.name,
+          fatherName: saleInput.customer.fatherName,
           phone: saleInput.customer.phone,
           email: saleInput.customer.email,
           cnicOrGovId: saleInput.customer.cnicOrGovId,
@@ -926,23 +1181,22 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
       })
     );
 
-    // If saleDate was modified, synchronize linked inventory device's saleRecord if exists
-    if (updates.saleDate) {
-      setInventory((prev) =>
-        prev.map((item) => {
-          if (item.saleRecord && (item.saleRecord.saleId === saleId)) {
-            return {
-              ...item,
-              saleRecord: {
-                ...item.saleRecord,
-                ...updates,
-              },
-            };
-          }
-          return item;
-        })
-      );
-    }
+    // Synchronize linked inventory device's saleRecord if exists
+    setInventory((prev) =>
+      prev.map((item) => {
+        if (item.saleRecord && (item.saleRecord.saleId === saleId)) {
+          return {
+            ...item,
+            saleRecord: {
+              ...item.saleRecord,
+              ...updates,
+              customer: updates.customer ? { ...item.saleRecord.customer, ...updates.customer } : item.saleRecord.customer,
+            },
+          };
+        }
+        return item;
+      })
+    );
   };
 
   const recordUsedIntake = (data: Omit<MobileItem, 'id' | 'createdAt' | 'updatedAt'>): MobileItem => {
@@ -1009,10 +1263,243 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const resetToSampleData = () => {
+    // Preserve current data in Gmail vault snapshot first so reset can always be undone!
+    const targetEmail = normalizeGmail(settings.backupGmail || 'mebadprince@gmail.com');
+    const currentPayload = createBackupPayload(inventory, sales, customers, settings);
+    saveGmailSnapshot(targetEmail, currentPayload, 'Pre-Reset Safety Snapshot');
+    storeLocalEmergencySnapshot(currentPayload);
+
     setInventory(sanitizeInventoryList(sampleInventory));
     setSales(sanitizeSalesList(sampleSales));
     setCustomers(sanitizeCustomersList(sampleCustomers));
     setSettings(initialSettings);
+  };
+
+  const restoreFullBackup = (data: any): { success: boolean; message: string; counts?: { inventory: number; sales: number; customers: number } } => {
+    try {
+      const validation = validateBackupData(data);
+      if (!validation.isValid) {
+        return { success: false, message: validation.reason || 'Invalid backup structure.' };
+      }
+
+      const cleanInventory = sanitizeInventoryList(data.inventory);
+      const cleanSales = sanitizeSalesList(data.sales);
+      const cleanCustomers = sanitizeCustomersList(data.customers);
+      const cleanSettings = data.settings ? { ...settings, ...data.settings } : settings;
+
+      setInventory(cleanInventory);
+      setSales(cleanSales);
+      setCustomers(cleanCustomers);
+      setSettings(cleanSettings);
+
+      // Save to primary storage immediately
+      localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(cleanInventory));
+      localStorage.setItem(SALES_STORAGE_KEY, JSON.stringify(cleanSales));
+      localStorage.setItem(CUSTOMERS_STORAGE_KEY, JSON.stringify(cleanCustomers));
+      localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(cleanSettings));
+
+      const payload = createBackupPayload(cleanInventory, cleanSales, cleanCustomers, cleanSettings);
+      const targetEmail = normalizeGmail(cleanSettings.backupGmail || 'mebadprince@gmail.com');
+      const meta = performAutoSave(targetEmail, payload, 'Restored from Backup');
+      setLastAutoSaveTime(meta.lastSavedTime);
+      setAutoSaveStatus(`Restored and auto-saved to Vault (${targetEmail})`);
+
+      return {
+        success: true,
+        message: `Successfully restored ${cleanInventory.length} devices, ${cleanSales.length} invoices, and ${cleanCustomers.length} customers/Khata records for ${targetEmail}!`,
+        counts: {
+          inventory: cleanInventory.length,
+          sales: cleanSales.length,
+          customers: cleanCustomers.length,
+        },
+      };
+    } catch (e: any) {
+      return { success: false, message: `Failed to restore records: ${e.message}` };
+    }
+  };
+
+  const restoreWithGmailId = async (
+    gmailId: string,
+    snapshotId?: string
+  ): Promise<{ success: boolean; message: string; counts?: { inventory: number; sales: number; customers: number } }> => {
+    try {
+      setIsAutoSaving(true);
+      const cleanEmail = normalizeGmail(gmailId || settings.backupGmail || 'mebadprince@gmail.com');
+
+      // Create a safety snapshot of current data before restoring, so user never loses anything!
+      const currentPayload = createBackupPayload(inventory, sales, customers, settings);
+      saveGmailSnapshot(cleanEmail, currentPayload, 'Pre-Restore Safety Snapshot');
+      storeLocalEmergencySnapshot(currentPayload);
+
+      let targetData: any = null;
+
+      // 1. If snapshotId is provided, check if it's a Drive file or local snapshot
+      if (snapshotId && snapshotId.startsWith('SNAP-')) {
+        const snapshots = await getGmailSnapshotsAsync(cleanEmail);
+        const match = snapshots.find((s) => s.id === snapshotId);
+        if (match && match.data) {
+          targetData = match.data;
+        }
+      } else if (snapshotId) {
+        // Try drive download
+        try {
+          const driveData = await downloadBackupFromDrive(snapshotId);
+          if (driveData && validateBackupData(driveData).isValid) {
+            targetData = driveData;
+          }
+        } catch (e) {
+          console.warn('Drive download failed, will fallback to local vault', e);
+        }
+      }
+
+      // 2. If not found yet, get latest Gmail snapshot from local vault (checking IndexedDB + memory)
+      if (!targetData) {
+        targetData = await getLatestGmailSnapshotAsync(cleanEmail);
+      }
+
+      // 3. If not found, check Permanent Vault
+      if (!targetData) {
+        targetData = await getPermanentVaultAsync();
+      }
+
+      // 4. If not found, check Emergency Snapshot
+      if (!targetData) {
+        targetData = getLocalEmergencySnapshot();
+      }
+
+      if (!targetData) {
+        return {
+          success: false,
+          message: `No existing backup records found for Gmail ID "${cleanEmail}". A new cloud snapshot has been registered for this Gmail ID so your future records are automatically safe.`,
+        };
+      }
+
+      return restoreFullBackup(targetData);
+    } catch (err: any) {
+      return { success: false, message: `Restore error: ${err.message}` };
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
+  const restoreFromDriveFileId = async (fileId: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      setIsAutoSaving(true);
+      const driveData = await downloadBackupFromDrive(fileId);
+      const res = restoreFullBackup(driveData);
+      return { success: res.success, message: res.message };
+    } catch (err: any) {
+      return { success: false, message: `Failed to download and restore from Google Drive: ${err.message}` };
+    } finally {
+      setIsAutoSaving(false);
+    }
+  };
+
+  const triggerGmailCloudSync = async (
+    customEmail?: string,
+    reason: string = 'Manual Cloud Sync'
+  ): Promise<{ success: boolean; message: string; driveUploaded?: boolean }> => {
+    const targetEmail = normalizeGmail(customEmail || settings.backupGmail || 'mebadprince@gmail.com');
+    const now = new Date().toISOString();
+    const payload = createBackupPayload(inventory, sales, customers, {
+      ...settings,
+      backupGmail: targetEmail,
+      lastBackupDate: now,
+    });
+
+    const meta = performAutoSave(targetEmail, payload, reason);
+    setLastAutoSaveTime(meta.lastSavedTime);
+    setSettings((prev) => ({ ...prev, backupGmail: targetEmail, lastBackupDate: now }));
+
+    let driveUploaded = false;
+    let driveMsg = '';
+
+    try {
+      const token = await getAccessToken();
+      if (token) {
+        await uploadBackupToDrive(payload);
+        driveUploaded = true;
+        driveMsg = ' & uploaded to your personal Google Drive';
+      }
+    } catch (err: any) {
+      console.warn('Google Drive cloud upload skipped or unauthenticated:', err);
+    }
+
+    return {
+      success: true,
+      message: `All ${inventory.length} devices, ${sales.length} invoices, and ${customers.length} customer records saved securely for ${targetEmail}${driveMsg}.`,
+      driveUploaded,
+    };
+  };
+
+  const getAvailableGmailBackups = async (gmailId?: string) => {
+    const cleanEmail = normalizeGmail(gmailId || settings.backupGmail || 'mebadprince@gmail.com');
+    const results: Array<{
+      id: string;
+      name: string;
+      timestamp: string;
+      dateFormatted: string;
+      source: 'drive' | 'local_vault';
+      inventoryCount: number;
+      salesCount: number;
+      customersCount: number;
+      reason?: string;
+      data?: any;
+    }> = [];
+
+    // 1. Fetch local vault snapshots for this Gmail ID (IndexedDB + Memory + LocalStorage)
+    const localSnapshots = await getGmailSnapshotsAsync(cleanEmail);
+    for (const snap of localSnapshots) {
+      results.push({
+        id: snap.id,
+        name: `Vault Snapshot (${snap.reason || 'Auto-Save'})`,
+        timestamp: snap.timestamp,
+        dateFormatted: snap.dateFormatted || new Date(snap.timestamp).toLocaleString(),
+        source: 'local_vault',
+        inventoryCount: snap.inventoryCount,
+        salesCount: snap.salesCount,
+        customersCount: snap.customersCount,
+        reason: snap.reason,
+        data: snap.data,
+      });
+    }
+
+    // 2. Fetch Google Drive backups if user is authenticated with Google
+    try {
+      const token = await getAccessToken();
+      if (token) {
+        const driveFiles = await listDriveBackups();
+        for (const file of driveFiles) {
+          results.push({
+            id: file.id,
+            name: file.name,
+            timestamp: file.createdTime,
+            dateFormatted: new Date(file.createdTime).toLocaleString(),
+            source: 'drive',
+            inventoryCount: 0,
+            salesCount: 0,
+            customersCount: 0,
+            reason: file.description || 'Google Drive Cloud File',
+          });
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return results;
+  };
+
+  const exportAllToPDF = (generatedBy?: string) => {
+    exportCompleteShopPDF(
+      inventory,
+      sales,
+      settings,
+      customers,
+      generatedBy || settings.ownerName || 'Admin'
+    );
+    const now = new Date().toISOString();
+    setSettings((prev) => ({ ...prev, lastBackupDate: now }));
   };
 
   const exportAllToSheets = () => {
@@ -1045,6 +1532,39 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return draft;
   };
 
+  const forceSyncNow = async () => {
+    setCloudSyncStatus('syncing');
+    try {
+      // 1. Pull latest entries from Firebase / Cloud first so phone entries are never lost
+      const res = await pullStoreFromCloud();
+      let combined = { inventory, sales, customers, settings };
+      if (res.success && res.data) {
+        isUpdatingFromCloud.current = true;
+        const cloudData = res.data;
+        combined = mergeStoreDatasets({ inventory, sales, customers, settings }, cloudData);
+        setInventory(sanitizeInventoryList(combined.inventory));
+        setSales(sanitizeSalesList(combined.sales));
+        setCustomers(sanitizeCustomersList(combined.customers));
+        if (combined.settings) {
+          setSettings(combined.settings);
+        }
+        setLastCloudSyncTime(new Date().toLocaleTimeString());
+        setTimeout(() => {
+          isUpdatingFromCloud.current = false;
+        }, 500);
+      }
+      // 2. Now push the combined state so both phone and system have identical data
+      await pushStoreToCloud(combined);
+      setCloudSyncStatus('synced');
+      setSyncNotification('All records fully synchronized across phone and system');
+    } catch (err) {
+      console.error('Manual sync failed:', err);
+      setCloudSyncStatus('error');
+    }
+  };
+
+  const clearSyncNotification = () => setSyncNotification(null);
+
   return (
     <ShopContext.Provider
       value={{
@@ -1054,6 +1574,13 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         settings,
         activeTab,
         setActiveTab,
+        lastAutoSaveTime,
+        isAutoSaving,
+        autoSaveStatus,
+        restoreWithGmailId,
+        restoreFullBackup,
+        triggerGmailCloudSync,
+        getAvailableGmailBackups,
         addMobile,
         updateMobile,
         deleteMobile,
@@ -1080,6 +1607,7 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         exportDataJSON,
         importDataJSON,
         resetToSampleData,
+        exportAllToPDF,
         exportAllToSheets,
         exportInventoryToSheets,
         exportSalesToSheets,
@@ -1117,10 +1645,21 @@ export const ShopProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsPosModalOpen,
         selectedDeviceForSale,
         setSelectedDeviceForSale,
+        selectedCustomerForSale,
+        setSelectedCustomerForSale,
         isBackupModalOpen,
         setIsBackupModalOpen,
         isInstallModalOpen,
         setIsInstallModalOpen,
+        isVoiceAssistantOpen,
+        setIsVoiceAssistantOpen,
+        isSyncModalOpen,
+        setIsSyncModalOpen,
+        cloudSyncStatus,
+        lastCloudSyncTime,
+        forceSyncNow,
+        syncNotification,
+        clearSyncNotification,
       }}
     >
       {children}
